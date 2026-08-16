@@ -80,7 +80,7 @@ export function AuthFlow() {
     return (
       <div className="auth-screen">
         <h1 className="pin-pad__headline">Enter your recovery phrase</h1>
-        <p className="pin-pad__subhead">Separate each word with a space, in the original order.</p>
+        <p className="pin-pad__subhead">12 or 24 words, separated by spaces, in the original order.</p>
         <textarea
           className="auth-screen__textarea"
           value={mnemonic}
@@ -92,7 +92,7 @@ export function AuthFlow() {
         <div className="auth-screen__actions">
           <button
             className="btn btn--primary"
-            disabled={mnemonic.trim().split(/\s+/).length < 24}
+            disabled={![12, 24].includes(mnemonic.trim().split(/\s+/).filter(Boolean).length)}
             onClick={() => {
               setError(null);
               setStep("setPin");
