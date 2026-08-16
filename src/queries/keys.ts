@@ -1,0 +1,19 @@
+/** Central query-key factory — keeps invalidation call sites typo-proof. */
+export const queryKeys = {
+  conversations: () => ["conversations"] as const,
+  conversation: (contactWallet: string) => ["conversation", contactWallet] as const,
+  unreadCount: (contactWallet: string) => ["unreadCount", contactWallet] as const,
+  contacts: () => ["contacts"] as const,
+  contact: (walletAddress: string) => ["contact", walletAddress] as const,
+  contactSearch: (query: string) => ["contactSearch", query] as const,
+  credits: () => ["credits"] as const,
+  appSettings: () => ["appSettings"] as const,
+  terminationConfigured: () => ["terminationConfigured"] as const,
+  walletBalance: () => ["walletBalance"] as const,
+  aliasPendingInvites: () => ["aliasPendingInvites"] as const,
+  aliasIncomingInvites: () => ["aliasIncomingInvites"] as const,
+  aliasContacts: () => ["aliasContacts"] as const,
+  aliasContact: (contactId: string) => ["aliasContact", contactId] as const,
+  aliasConversations: () => ["aliasConversations"] as const,
+  aliasConversation: (contactId: string) => ["aliasConversation", contactId] as const,
+};

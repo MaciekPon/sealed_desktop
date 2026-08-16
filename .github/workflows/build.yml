@@ -1,0 +1,59 @@
+name: Build & Release
+
+# Manual trigger by default — click "Run workflow" in the Actions tab
+# whenever you want a fresh build for testers. Also runs on any pushed tag
+# starting with "v" (e.g. `git tag v0.1.0 && git push origin v0.1.0`), if
+# you'd rather cut a build that way.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ""
+          # macos-latest runners are Apple Silicon; build a universal
+          # binary so both Apple Silicon and Intel testers can run it.
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: "Sealed v__VERSION__"
+          releaseBody: |
+            Unsigned test build — Windows will show a SmartScreen warning
+            ("Windows protected your PC" → More info → Run anyway), macOS
+            will block it via Gatekeeper the first time (right-click the
+            app → Open, or System Settings → Privacy & Security → Open
+            Anyway). This is expected for an unsigned build.
+          releaseDraft: true
+          prerelease: true
+          args: ${{ matrix.args }}
