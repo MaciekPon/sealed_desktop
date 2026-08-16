@@ -10,6 +10,15 @@ on:
     tags:
       - "v*"
 
+# tauri-action needs write access to create the draft release + upload
+# build assets. Explicit here rather than relying on the repo's
+# Settings -> Actions -> General -> "Workflow permissions" default, which
+# is read-only unless changed — this way it works regardless of that
+# setting ("Resource not accessible by integration" is what a read-only
+# GITHUB_TOKEN produces when tauri-action tries to create the release).
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
