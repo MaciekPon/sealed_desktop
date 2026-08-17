@@ -57,6 +57,27 @@ export function useResolveContactKeys() {
   });
 }
 
+/**
+ * On-chain username for a wallet that has none cached locally yet — e.g. a
+ * conversation with someone never manually added as a contact. A username
+ * claim is on-chain, global state (not tied to any one device), so it
+ * should show up here regardless of local contacts-cache/address-book
+ * membership. `enabled` should be false once a caller already has a
+ * username from a faster local source (contacts cache, per-message
+ * snapshot) — this hook is the last-resort fallback, not the first lookup,
+ * since it costs a live chain/indexer round trip. Cached forever per
+ * wallet (this project's global `staleTime: Infinity`), so it only ever
+ * pays that cost once per wallet per session.
+ */
+export function useResolvedUsername(walletAddress: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.resolvedUsername(walletAddress),
+    queryFn: () => contacts.resolveKeys(walletAddress),
+    select: (keys) => keys.username,
+    enabled,
+  });
+}
+
 function useContactFlagMutation(mutationFn: (walletAddress: string) => Promise<void>) {
   const queryClient = useQueryClient();
   return useMutation({

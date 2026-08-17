@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { useChatUiStore } from "../../stores/chatUiStore";
-import { useContact, useAddToContacts, useBlockContact, useDeleteContact, useRemoveFromContacts, useUnblockContact } from "../../queries/contacts";
+import {
+  useContact,
+  useAddToContacts,
+  useBlockContact,
+  useDeleteContact,
+  useRemoveFromContacts,
+  useResolvedUsername,
+  useUnblockContact,
+} from "../../queries/contacts";
 import {
   useAcceptIncomingInvite,
   useAliasContacts,
@@ -20,6 +28,10 @@ export function ContactProfile() {
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
 
   const { data: contact } = useContact(walletAddress);
+  // A username claim is on-chain, global state — resolve it even for a
+  // wallet that was never manually added, same reasoning as
+  // `ContactsSidebar`'s `ConversationRow`.
+  const { data: resolvedUsername } = useResolvedUsername(walletAddress ?? "", walletAddress !== null && !contact?.username);
   const addToContacts = useAddToContacts();
   const removeFromContacts = useRemoveFromContacts();
   const blockContact = useBlockContact();
@@ -84,14 +96,14 @@ export function ContactProfile() {
       </div>
 
       <div className="contact-profile__body">
-        {contact?.username ? (
+        {contact?.username ?? resolvedUsername ? (
           <span className="contact-profile__avatar" style={{ background: avatarColor(walletAddress) }}>
-            {initials(contact.username)}
+            {initials((contact?.username ?? resolvedUsername) as string)}
           </span>
         ) : (
           <span className="contact-profile__avatar contact-profile__avatar--dm">DM</span>
         )}
-        <h3 className="contact-profile__name">{contact?.username ?? formatWalletAddress(walletAddress)}</h3>
+        <h3 className="contact-profile__name">{contact?.username ?? resolvedUsername ?? formatWalletAddress(walletAddress)}</h3>
         <p className="contact-profile__address">{truncateWalletAddress(walletAddress)}</p>
 
         {contact?.isBlocked && <p className="contact-profile__status contact-profile__status--blocked">Blocked</p>}

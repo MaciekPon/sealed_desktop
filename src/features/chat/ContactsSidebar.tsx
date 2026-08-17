@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { useContacts, useResolveContactKeys, useSaveContact, useAddToContacts } from "../../queries/contacts";
+import { useContacts, useResolveContactKeys, useResolvedUsername, useSaveContact, useAddToContacts } from "../../queries/contacts";
 import { useConversations } from "../../queries/messaging";
 import { useAliasContacts, useIncomingInvites } from "../../queries/alias";
 import { useChatUiStore } from "../../stores/chatUiStore";
 import { avatarColor, formatWalletAddress, initials, isValidAlgorandAddress, truncateWalletAddress } from "../../lib/format";
 import { username as usernameApi } from "../../lib/tauri";
+import type { ConversationPreview } from "../../models";
 import "./chat.css";
 
 type Tab = "chats" | "alias" | "spam";
@@ -224,32 +225,67 @@ export function ContactsSidebar() {
             ))}
           </div>
         )}
-        {visibleConversations.map((c) => {
-          const displayName = usernameByWallet.get(c.contactWallet) ?? c.contactUsername ?? null;
-          return (
-          <div key={c.contactWallet} className={`sidebar__row ${selectedWallet === c.contactWallet ? "sidebar__row--selected" : ""}`}>
-            <button className="sidebar__row-main" onClick={() => selectContact(c.contactWallet)}>
-              {displayName ? (
-                <span className="sidebar__avatar" style={{ background: avatarColor(c.contactWallet) }}>
-                  {initials(displayName)}
-                </span>
-              ) : (
-                <span className="sidebar__avatar sidebar__avatar--dm">DM</span>
-              )}
-              <span className="sidebar__row-text">
-                <span className="sidebar__row-name">{displayName ?? formatWalletAddress(c.contactWallet)}</span>
-                <span className="sidebar__row-address">
-                  {displayName ? truncateWalletAddress(c.contactWallet) : c.lastMessagePreview}
-                </span>
-              </span>
-            </button>
-            <button className="sidebar__row-info-btn" onClick={() => openContactProfile(c.contactWallet)} aria-label="Contact info">
-              ⓘ
-            </button>
-          </div>
-          );
-        })}
+        {visibleConversations.map((c) => (
+          <ConversationRow
+            key={c.contactWallet}
+            conversation={c}
+            cachedUsername={usernameByWallet.get(c.contactWallet)}
+            isSelected={selectedWallet === c.contactWallet}
+            onSelect={() => selectContact(c.contactWallet)}
+            onOpenInfo={() => openContactProfile(c.contactWallet)}
+          />
+        ))}
       </div>
     </aside>
+  );
+}
+
+/**
+ * A username claim is on-chain, global state — it should show up here
+ * regardless of whether this wallet is in the local contacts cache, so a
+ * chat with someone who has a username never falls back to their raw
+ * wallet address just because they were never manually added. `cachedUsername`
+ * (contacts cache) and `conversation.contactUsername` (per-message snapshot)
+ * are both fast, already-loaded local sources tried first; `useResolvedUsername`
+ * only fires a live chain/indexer lookup when neither has an answer.
+ */
+function ConversationRow({
+  conversation,
+  cachedUsername,
+  isSelected,
+  onSelect,
+  onOpenInfo,
+}: {
+  conversation: ConversationPreview;
+  cachedUsername: string | undefined;
+  isSelected: boolean;
+  onSelect: () => void;
+  onOpenInfo: () => void;
+}) {
+  const localDisplayName = cachedUsername ?? conversation.contactUsername ?? null;
+  const { data: resolvedUsername } = useResolvedUsername(conversation.contactWallet, localDisplayName === null);
+  const displayName = localDisplayName ?? resolvedUsername ?? null;
+
+  return (
+    <div className={`sidebar__row ${isSelected ? "sidebar__row--selected" : ""}`}>
+      <button className="sidebar__row-main" onClick={onSelect}>
+        {displayName ? (
+          <span className="sidebar__avatar" style={{ background: avatarColor(conversation.contactWallet) }}>
+            {initials(displayName)}
+          </span>
+        ) : (
+          <span className="sidebar__avatar sidebar__avatar--dm">DM</span>
+        )}
+        <span className="sidebar__row-text">
+          <span className="sidebar__row-name">{displayName ?? formatWalletAddress(conversation.contactWallet)}</span>
+          <span className="sidebar__row-address">
+            {displayName ? truncateWalletAddress(conversation.contactWallet) : conversation.lastMessagePreview}
+          </span>
+        </span>
+      </button>
+      <button className="sidebar__row-info-btn" onClick={onOpenInfo} aria-label="Contact info">
+        ⓘ
+      </button>
+    </div>
   );
 }

@@ -5,6 +5,7 @@ export const queryKeys = {
   unreadCount: (contactWallet: string) => ["unreadCount", contactWallet] as const,
   contacts: () => ["contacts"] as const,
   contact: (walletAddress: string) => ["contact", walletAddress] as const,
+  resolvedUsername: (walletAddress: string) => ["resolvedUsername", walletAddress] as const,
   contactSearch: (query: string) => ["contactSearch", query] as const,
   credits: () => ["credits"] as const,
   appSettings: () => ["appSettings"] as const,
