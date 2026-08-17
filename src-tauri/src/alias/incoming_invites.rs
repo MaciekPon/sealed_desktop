@@ -18,6 +18,11 @@ pub struct IncomingInvite {
     pub peer_username: Option<String>,
     pub envelope_bytes: Vec<u8>,
     pub received_at: i64,
+    // Filtering already happened in SQL (`list_incoming_invites`'s `WHERE
+    // status = ?1`), so by the time a row reaches Rust its status is
+    // already known from context — no caller re-reads this field. Kept on
+    // the struct because it's a real column and useful when debugging.
+    #[allow(dead_code)]
     pub status: String,
 }
 

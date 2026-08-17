@@ -580,6 +580,10 @@ pub async fn send_message_network(
 /// invite/accept envelopes) never appear as a chat bubble, so there's
 /// nothing to save to the `messages` table.
 pub struct SendRawBytesOutcome {
+    // Both call sites in `commands::alias.rs` return their own DTO instead
+    // of the tx id — unlike `send_message`'s outcome, nothing surfaces this
+    // to the frontend today.
+    #[allow(dead_code)]
     pub tx_id: String,
     pub contact_keys_update: ContactKeysUpdate,
 }

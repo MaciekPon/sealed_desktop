@@ -17,15 +17,23 @@
 
 use sha2::{Digest, Sha256};
 
+// Decoded for a complete, byte-accurate parse of the ARC4 tuple, but credit
+// balance is read via `SealedChainClient::get_credits`'s own ABI call
+// instead of by summing batches locally — nothing reads these back yet.
+#[allow(dead_code)]
 pub struct Batch {
     pub amount: u64,
     pub expiry_round: u64,
 }
 
 pub struct DecodedUserState {
+    // Same reasoning as `Batch` above — decoded for completeness, unread.
+    #[allow(dead_code)]
     pub version: u8,
     pub username: Vec<u8>,
+    #[allow(dead_code)]
     pub batch_count: u8,
+    #[allow(dead_code)]
     pub batches: Vec<Batch>,
     pub encryption_pubkey: [u8; 32],
     pub scan_pubkey: [u8; 32],

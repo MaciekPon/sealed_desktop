@@ -54,6 +54,10 @@ pub fn mark_alias_conversation_read(conn: &Connection, contact_id: &str) -> rusq
     Ok(())
 }
 
+// No `#[tauri::command]` wired up yet — unread badges for alias chats are
+// still Phase 7 backlog (7b covers wallet DMs only so far). Mirrors
+// `messages::get_unread_count`, which already has a live caller.
+#[allow(dead_code)]
 pub fn get_alias_unread_count(conn: &Connection, contact_id: &str) -> rusqlite::Result<i64> {
     conn.query_row(
         "SELECT COUNT(*) FROM alias_messages WHERE contact_id = ?1 AND is_outgoing = 0 AND is_read = 0",

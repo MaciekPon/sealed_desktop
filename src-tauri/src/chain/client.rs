@@ -24,7 +24,7 @@ use crate::ohttp::client::{OhttpError, OhttpHttpClient};
 use super::escrow::TreasuryEscrowSigner;
 use super::msgpack::{encode_abi_dynamic_bytes, Field};
 use super::txn::{
-    abi_selector, build_app_call_txn, build_app_call_txn_with_boxes, build_escrow_self_pay_txn,
+    abi_selector, build_app_call_txn_with_boxes, build_escrow_self_pay_txn,
     compute_group_id, compute_tx_id, encode_signed_tx_with_ed25519, encode_simulate_request,
     SuggestedParams, TxnFields,
 };
@@ -49,6 +49,10 @@ pub enum ChainError {
     UserNotFound,
     #[error("{0}")]
     Generic(String),
+    // Never constructed today — `Session` always holds a loaded wallet by
+    // the time any `SealedChainClient` method runs. Kept for the day a
+    // caller needs to distinguish this from `Generic`.
+    #[allow(dead_code)]
     #[error("wallet not loaded")]
     WalletNotLoaded,
     #[error("validation error: {0}")]
@@ -69,6 +73,11 @@ pub struct UserProfile {
     pub username: Option<String>,
     pub encryption_pubkey: [u8; 32],
     pub scan_pubkey: [u8; 32],
+    // Decoded from chain alongside `pq_pubkey_hash` for completeness, but
+    // callers only ever compare the hash (staleness/freshness checks) — the
+    // raw key isn't needed until KEM encapsulation, which reads it fresh
+    // from `contacts_cache` instead of this transient struct.
+    #[allow(dead_code)]
     pub pq_public_key: Option<Vec<u8>>,
     pub pq_pubkey_hash: Option<[u8; 32]>,
 }

@@ -42,6 +42,10 @@ pub fn build_treasury_escrow_signer() -> TreasuryEscrowSigner {
 
 pub struct TreasuryEscrowSigner {
     program: Vec<u8>,
+    // Only read by this module's own `address_matches_golden_vector` test
+    // (a `cfg(test)`-only call site, invisible to a plain `cargo build`).
+    // Transaction building uses `address_pubkey` directly.
+    #[allow(dead_code)]
     pub address: String,
     pub address_pubkey: [u8; 32],
 }

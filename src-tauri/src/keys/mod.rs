@@ -30,6 +30,9 @@ const PQ_MASTER_SEED_INFO: &[u8] = b"sealed-pq-master-seed-v1";
 const PQ_KEM_INFO: &[u8] = b"sealed-pq-kem-v1";
 
 pub struct SealedKeys {
+    // Duplicated for a self-contained struct — callers already have the
+    // wallet address independently via `Session.wallet.address`.
+    #[allow(dead_code)]
     pub wallet_address: String,
     pub encryption_pubkey: [u8; 32],
     pub scan_pubkey: [u8; 32],

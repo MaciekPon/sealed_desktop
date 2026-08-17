@@ -20,6 +20,11 @@ pub struct PendingInvite {
     pub my_scan_seed: [u8; 32],
     pub my_scan_pub: [u8; 32],
     pub my_pq_sk: Vec<u8>,
+    // Same reasoning as `AliasContact::my_scan_pub` above — the public half
+    // was already sent in the invite envelope; only the secret half
+    // (`my_pq_sk`, for decapsulating the eventual accept reply) is read
+    // again later.
+    #[allow(dead_code)]
     pub my_pq_pub: Vec<u8>,
     pub created_at: i64,
     pub dismissed: bool,
@@ -119,6 +124,11 @@ pub struct AliasContact {
     pub peer_wallet: Option<String>,
     pub my_enc_seed: [u8; 32],
     pub my_scan_seed: [u8; 32],
+    // Loaded alongside `my_scan_seed` for a complete row, but nothing needs
+    // it back: `check_recipient_tag`/message decrypt only ever use the
+    // private seed, and this account's own scan pubkey was already
+    // embedded in the invite/accept envelope sent to the peer.
+    #[allow(dead_code)]
     pub my_scan_pub: [u8; 32],
     pub peer_enc_pub: [u8; 32],
     pub peer_scan_pub: [u8; 32],

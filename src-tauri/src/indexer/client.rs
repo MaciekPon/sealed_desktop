@@ -44,7 +44,11 @@ pub struct UsernameSearchHit {
 
 #[derive(Debug)]
 pub struct UsernameSearchResult {
+    // Echoed back from the API response for a complete struct; the only
+    // caller (`commands::username::search_usernames`) only reads `.users`.
+    #[allow(dead_code)]
     pub query: String,
+    #[allow(dead_code)]
     pub count: u64,
     pub users: Vec<UsernameSearchHit>,
 }
@@ -52,7 +56,12 @@ pub struct UsernameSearchResult {
 #[derive(Debug)]
 pub struct PqPublicKeyResponse {
     pub pq_pubkey: Vec<u8>,
+    // The caller (`commands::contacts::fetch_and_verify_pq_pubkey`)
+    // recomputes the hash itself via SHA-256 rather than trusting the
+    // server's claimed value — deliberate, not an oversight.
+    #[allow(dead_code)]
     pub pq_pubkey_hash: [u8; 32],
+    #[allow(dead_code)]
     pub published_at_round: i64,
 }
 

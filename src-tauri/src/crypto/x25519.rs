@@ -35,6 +35,11 @@ pub fn ed25519_public_key_to_x25519(ed25519_pubkey: &[u8; 32]) -> Option<[u8; 32
 /// A freshly-generated, one-shot X25519 keypair. Mirrors
 /// `CryptoService.generateEphemeralKeyPair`.
 pub struct EphemeralKeyPair {
+    // `messaging.rs`'s "filler" call sites only need `.public` (a decoy
+    // ephemeral key with no real peer to Diffie-Hellman against); `.secret`
+    // is otherwise only read by this module's own `#[cfg(test)]` code,
+    // invisible to a plain `cargo build`.
+    #[allow(dead_code)]
     pub secret: EphemeralSecret,
     pub public: [u8; 32],
 }

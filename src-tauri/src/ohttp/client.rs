@@ -33,6 +33,10 @@ pub enum OhttpError {
 
 pub struct OhttpResponse {
     pub status_code: u32,
+    // Captured from the decoded binary-HTTP response for a complete
+    // struct; no caller has needed a response header yet (only
+    // `status_code`/`body`, via `is_success()`).
+    #[allow(dead_code)]
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
@@ -56,6 +60,12 @@ pub struct OhttpHttpClient {
 }
 
 impl OhttpHttpClient {
+    // Every real construction site uses `new_with_bundled_config` instead
+    // (a cold-start plaintext config GET would leak the caller's IP,
+    // defeating the whole point of OHTTP — see that constructor's doc
+    // comment). Kept as the documented "if you ever have a legitimate
+    // reason to skip the bundled config" escape hatch.
+    #[allow(dead_code)]
     pub fn new(gateway_config_url: impl Into<String>, relay_url: impl Into<String>) -> Self {
         Self {
             gateway_config_url: gateway_config_url.into(),
