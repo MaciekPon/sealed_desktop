@@ -105,6 +105,43 @@ function ensureDemoData() {
     { id: "demo-2", senderWallet: state.walletAddress, senderUsername: null, recipientWallet: greg.walletAddress, recipientUsername: "Greg", content: "Sent them over, let me know if anything's missing.", timestamp: nowSeconds() - 600, isOutgoing: true, onChainPubkey: "demo-2" },
     { id: "demo-1", senderWallet: greg.walletAddress, senderUsername: "Greg", recipientWallet: state.walletAddress, recipientUsername: null, content: "Hey, can you send over the design files?", timestamp: nowSeconds() - 900, isOutgoing: false, onChainPubkey: "demo-1" },
   ]);
+
+  // Unnamed alias contact — established (accepted an invite) but never
+  // labeled. Demo data specifically for reproducing/fixing how the chat
+  // list + chat window render an alias contact with `label: null`.
+  const unnamedAliasId = randomHex(32);
+  state.aliasContacts.push({
+    contactId: unnamedAliasId,
+    label: null,
+    isCreator: false,
+    peerWallet: null,
+    createdAt: nowSeconds() - 5000,
+    establishedAt: nowSeconds() - 4900,
+  });
+  state.aliasConversations.set(unnamedAliasId, [
+    { id: "alias-demo-2", contactId: unnamedAliasId, content: "Got it, talk soon.", timestamp: nowSeconds() - 120, isOutgoing: false },
+    { id: "alias-demo-1", contactId: unnamedAliasId, content: "Hey, it's me from the QR code earlier.", timestamp: nowSeconds() - 240, isOutgoing: true },
+  ]);
+
+  // Incoming invite (not yet accepted) from a peer with no resolvable
+  // username — exercises the `inv.peerUsername ?? formatWalletAddress(...)`
+  // fallback in the "Invitations" section of the Alias tab.
+  state.aliasIncomingInvites.push({
+    inviteRef: randomHex(32),
+    peerWallet: randomWalletAddress(),
+    peerUsername: null,
+    receivedAt: nowSeconds() - 60,
+  });
+
+  // A second incoming invite, this one with a resolvable username — makes
+  // it easy to compare the named vs. unnamed row side by side in the
+  // Invitations list.
+  state.aliasIncomingInvites.push({
+    inviteRef: randomHex(32),
+    peerWallet: randomWalletAddress(),
+    peerUsername: "Priya",
+    receivedAt: nowSeconds() - 30,
+  });
 }
 
 function conversationPreviews(): ConversationPreview[] {

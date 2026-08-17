@@ -7,16 +7,10 @@ export function isValidAlgorandAddress(address: string): boolean {
   return ALGORAND_ADDRESS_RE.test(address.trim());
 }
 
-/**
- * Groups-of-4 display with the tail masked, matching the mobile Contacts
- * screen's "3728 1927 2939 xxxx xxxx xxxx" style for wallet-only contacts.
- */
+/** First 5 / last 5 characters, e.g. "ABCDE•••••VWXYZ" — compact single-line display for wallet-only contacts, sidebar rows, and headers. */
 export function formatWalletAddress(address: string): string {
-  const groups: string[] = [];
-  for (let i = 0; i < address.length; i += 4) {
-    groups.push(address.slice(i, i + 4));
-  }
-  return groups.map((g, i) => (i < 3 ? g : "x".repeat(g.length))).join(" ");
+  if (address.length <= 10) return address;
+  return `${address.slice(0, 5)}•••••${address.slice(-5)}`;
 }
 
 export function truncateWalletAddress(address: string): string {

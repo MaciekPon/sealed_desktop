@@ -202,6 +202,7 @@
 }
 
 .sidebar__row-name {
+  display: block;
   font-size: 13.5px;
   font-weight: 500;
   white-space: nowrap;
@@ -210,6 +211,8 @@
 }
 
 .sidebar__row-address {
+  display: block;
+  margin-top: 2px;
   font-size: 11px;
   color: var(--color-primary);
   font-family: "SFMono-Regular", Consolas, monospace;
@@ -260,7 +263,7 @@
   font-size: 11px;
   color: var(--color-text-tertiary);
   font-family: "SFMono-Regular", Consolas, monospace;
-  margin: 0;
+  margin: 4px 0 0;
 }
 
 .chat-window__empty {

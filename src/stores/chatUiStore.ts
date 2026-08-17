@@ -7,6 +7,10 @@ interface ChatUiState {
    * stable wallet-chat call sites (`ContactsSidebar`/`ChatWindow`) don't
    * need renaming. Selecting one clears the other. */
   selectedAliasContactId: string | null;
+  /** A not-yet-accepted incoming alias invite, opened in the chat window so
+   * Accept/Decline can live where the composer normally does. Mutually
+   * exclusive with `selectedWallet`/`selectedAliasContactId`. */
+  selectedIncomingInviteRef: string | null;
   sidebarCollapsed: boolean;
   /** Which top-level screen `MainLayout` renders — chat is the default. */
   screen: "chat" | "settings" | "contactProfile" | "alias";
@@ -14,6 +18,7 @@ interface ChatUiState {
   viewingContactWallet: string | null;
   selectContact: (walletAddress: string) => void;
   selectAliasContact: (contactId: string) => void;
+  selectIncomingInvite: (inviteRef: string) => void;
   clearSelection: () => void;
   toggleSidebar: () => void;
   openSettings: () => void;
@@ -27,12 +32,14 @@ interface ChatUiState {
 export const useChatUiStore = create<ChatUiState>((set) => ({
   selectedWallet: null,
   selectedAliasContactId: null,
+  selectedIncomingInviteRef: null,
   sidebarCollapsed: false,
   screen: "chat",
   viewingContactWallet: null,
-  selectContact: (walletAddress) => set({ selectedWallet: walletAddress, selectedAliasContactId: null, screen: "chat" }),
-  selectAliasContact: (contactId) => set({ selectedAliasContactId: contactId, selectedWallet: null, screen: "chat" }),
-  clearSelection: () => set({ selectedWallet: null, selectedAliasContactId: null }),
+  selectContact: (walletAddress) => set({ selectedWallet: walletAddress, selectedAliasContactId: null, selectedIncomingInviteRef: null, screen: "chat" }),
+  selectAliasContact: (contactId) => set({ selectedAliasContactId: contactId, selectedWallet: null, selectedIncomingInviteRef: null, screen: "chat" }),
+  selectIncomingInvite: (inviteRef) => set({ selectedIncomingInviteRef: inviteRef, selectedWallet: null, selectedAliasContactId: null, screen: "chat" }),
+  clearSelection: () => set({ selectedWallet: null, selectedAliasContactId: null, selectedIncomingInviteRef: null }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   openSettings: () => set({ screen: "settings" }),
   closeSettings: () => set({ screen: "chat" }),

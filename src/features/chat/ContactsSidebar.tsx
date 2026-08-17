@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useContacts, useResolveContactKeys, useSaveContact, useAddToContacts } from "../../queries/contacts";
 import { useConversations } from "../../queries/messaging";
-import { useAcceptIncomingInvite, useAliasContacts, useDeclineIncomingInvite, useIncomingInvites } from "../../queries/alias";
+import { useAliasContacts, useIncomingInvites } from "../../queries/alias";
 import { useChatUiStore } from "../../stores/chatUiStore";
 import { avatarColor, formatWalletAddress, initials, isValidAlgorandAddress, truncateWalletAddress } from "../../lib/format";
 import { username as usernameApi } from "../../lib/tauri";
@@ -38,6 +38,8 @@ export function ContactsSidebar() {
   const selectedAliasContactId = useChatUiStore((s) => s.selectedAliasContactId);
   const selectContact = useChatUiStore((s) => s.selectContact);
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
+  const selectIncomingInvite = useChatUiStore((s) => s.selectIncomingInvite);
+  const selectedIncomingInviteRef = useChatUiStore((s) => s.selectedIncomingInviteRef);
   const toggleSidebar = useChatUiStore((s) => s.toggleSidebar);
   const openSettings = useChatUiStore((s) => s.openSettings);
   const openContactProfile = useChatUiStore((s) => s.openContactProfile);
@@ -50,8 +52,6 @@ export function ContactsSidebar() {
   const saveContact = useSaveContact();
   const resolveKeys = useResolveContactKeys();
   const addToContacts = useAddToContacts();
-  const acceptIncomingInvite = useAcceptIncomingInvite();
-  const declineIncomingInvite = useDeclineIncomingInvite();
 
   const [tab, setTab] = useState<Tab>("chats");
   const [query, setQuery] = useState("");
@@ -197,25 +197,12 @@ export function ContactsSidebar() {
           <div>
             <div className="sidebar__group-label">Invitations</div>
             {incomingInvites.map((inv) => (
-              <div key={inv.inviteRef} className="sidebar__row">
-                <span className="sidebar__avatar sidebar__avatar--dm">A</span>
-                <span className="sidebar__row-text">
-                  <span className="sidebar__row-name">{inv.peerUsername ?? formatWalletAddress(inv.peerWallet)}</span>
-                  <span className="sidebar__row-address">wants to start an alias chat</span>
-                </span>
-                <button
-                  className="btn btn--text"
-                  disabled={acceptIncomingInvite.isPending}
-                  onClick={() => acceptIncomingInvite.mutate({ inviteRef: inv.inviteRef })}
-                >
-                  Accept
-                </button>
-                <button
-                  className="btn btn--text"
-                  disabled={declineIncomingInvite.isPending}
-                  onClick={() => declineIncomingInvite.mutate(inv.inviteRef)}
-                >
-                  Decline
+              <div key={inv.inviteRef} className={`sidebar__row ${selectedIncomingInviteRef === inv.inviteRef ? "sidebar__row--selected" : ""}`}>
+                <button className="sidebar__row-main" onClick={() => selectIncomingInvite(inv.inviteRef)}>
+                  <span className="sidebar__avatar sidebar__avatar--dm">A</span>
+                  <span className="sidebar__row-text">
+                    <span className="sidebar__row-name">{inv.peerUsername ?? formatWalletAddress(inv.peerWallet)}</span>
+                  </span>
                 </button>
               </div>
             ))}
