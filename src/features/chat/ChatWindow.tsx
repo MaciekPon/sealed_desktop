@@ -21,8 +21,6 @@ export function ChatWindow() {
   const selectedWallet = useChatUiStore((s) => s.selectedWallet);
   const selectedAliasContactId = useChatUiStore((s) => s.selectedAliasContactId);
   const selectedIncomingInviteRef = useChatUiStore((s) => s.selectedIncomingInviteRef);
-  const sidebarCollapsed = useChatUiStore((s) => s.sidebarCollapsed);
-  const toggleSidebar = useChatUiStore((s) => s.toggleSidebar);
   const clearSelection = useChatUiStore((s) => s.clearSelection);
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
 
@@ -126,11 +124,6 @@ export function ChatWindow() {
   if (!selectedWallet && !selectedAliasContactId && !selectedIncomingInviteRef) {
     return (
       <div className="chat-window">
-        {sidebarCollapsed && (
-          <button className="chat-window__sidebar-toggle" style={{ margin: 16 }} onClick={toggleSidebar}>
-            ⟩ Contacts
-          </button>
-        )}
         <div className="chat-window__empty">
           <p>Select a contact to start chatting.</p>
         </div>
@@ -151,11 +144,6 @@ export function ChatWindow() {
   return (
     <div className="chat-window">
       <div className="chat-window__header">
-        {sidebarCollapsed && (
-          <button className="chat-window__sidebar-toggle" onClick={toggleSidebar}>
-            ⟩
-          </button>
-        )}
         <div>
           <p className="chat-window__header-name">{headerName}</p>
           {!isAlias && !isIncoming && (contact?.username ?? resolvedUsername) && <p className="chat-window__header-address">{truncateWalletAddress(selectedWallet as string)}</p>}

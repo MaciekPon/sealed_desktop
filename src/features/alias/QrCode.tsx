@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import QRCode from "qrcode";
+import "./alias.css";
 
 /**
  * Thin canvas wrapper around `qrcode`'s generator — display only, no
- * camera/scanning. A phone running the mobile app can scan this; the
- * desktop side of a handshake always uses paste (see `AliasPasteDialog`).
+ * camera/scanning. Used by `SettingsScreen`'s wallet-address reveal.
  */
 export function QrCode({ value, size = 220 }: { value: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

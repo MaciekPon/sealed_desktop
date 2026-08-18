@@ -16,10 +16,28 @@ import {
   useIncomingInvites,
   usePendingInvites,
 } from "../../queries/alias";
-import { avatarColor, formatWalletAddress, initials, truncateWalletAddress } from "../../lib/format";
+import { avatarColor, formatWalletAddress, initials } from "../../lib/format";
+import { QrCode } from "../alias/QrCode";
+import { IconLock } from "../settings/icons";
+import {
+  IconCheck,
+  IconChatBubble,
+  IconLockOpen,
+  IconPhone,
+  IconUserCheck,
+  IconUserMinus,
+  IconUserPlus,
+} from "./icons";
 import "./contactProfile.css";
 
-/** Block/unblock and add/remove-contact, reached from a contact row's info button in `ContactsSidebar`. */
+/**
+ * Reached from a contact row's info button in `ContactsSidebar`, restyled
+ * 2026-08-18 to match a supplied design mockup — avatar/QR/bio/action-row
+ * layout. "Bio" has no backend (no such field exists anywhere) so it's
+ * rendered as a disabled placeholder, same treatment as Settings' rows for
+ * features that don't exist yet. Calling (the phone icon) is likewise
+ * disabled — there is no voice-call feature in this app at all.
+ */
 export function ContactProfile() {
   const walletAddress = useChatUiStore((s) => s.viewingContactWallet);
   const closeContactProfile = useChatUiStore((s) => s.closeContactProfile);
@@ -31,7 +49,10 @@ export function ContactProfile() {
   // A username claim is on-chain, global state — resolve it even for a
   // wallet that was never manually added, same reasoning as
   // `ContactsSidebar`'s `ConversationRow`.
-  const { data: resolvedUsername } = useResolvedUsername(walletAddress ?? "", walletAddress !== null && !contact?.username);
+  const { data: resolvedUsername } = useResolvedUsername(
+    walletAddress ?? "",
+    walletAddress !== null && !contact?.username,
+  );
   const addToContacts = useAddToContacts();
   const removeFromContacts = useRemoveFromContacts();
   const blockContact = useBlockContact();
@@ -47,40 +68,75 @@ export function ContactProfile() {
   const createInviteForContact = useCreateInviteForContact();
   const acceptIncomingInvite = useAcceptIncomingInvite();
   const [aliasError, setAliasError] = useState<string | null>(null);
+  const [addressCopied, setAddressCopied] = useState(false);
 
   if (!walletAddress) return null;
 
+  const displayName = contact?.username ?? resolvedUsername ?? null;
   const busy =
-    addToContacts.isPending || removeFromContacts.isPending || blockContact.isPending || unblockContact.isPending || deleteContact.isPending;
+    addToContacts.isPending ||
+    removeFromContacts.isPending ||
+    blockContact.isPending ||
+    unblockContact.isPending ||
+    deleteContact.isPending;
 
-  const existingAliasContact = aliasContacts.find((c) => c.peerWallet === walletAddress);
-  const myPendingAliasInvite = pendingInvites.find((p) => p.peerWallet === walletAddress && !p.dismissed);
-  const theirIncomingAliasInvite = incomingInvites.find((i) => i.peerWallet === walletAddress);
+  const existingAliasContact = aliasContacts.find(
+    (c) => c.peerWallet === walletAddress,
+  );
+  const myPendingAliasInvite = pendingInvites.find(
+    (p) => p.peerWallet === walletAddress && !p.dismissed,
+  );
+  const theirIncomingAliasInvite = incomingInvites.find(
+    (i) => i.peerWallet === walletAddress,
+  );
+  const aliasBusy =
+    acceptIncomingInvite.isPending || createInviteForContact.isPending;
+  const aliasLabel = existingAliasContact
+    ? "Open chat"
+    : myPendingAliasInvite
+      ? "Pending…"
+      : theirIncomingAliasInvite
+        ? acceptIncomingInvite.isPending
+          ? "Accepting…"
+          : "Accept"
+        : createInviteForContact.isPending
+          ? "Sending…"
+          : "Start Chat";
+
+  function openChat() {
+    selectContact(walletAddress as string);
+    closeContactProfile();
+  }
 
   async function handleDelete() {
-    if (!walletAddress) return;
-    await deleteContact.mutateAsync(walletAddress);
+    await deleteContact.mutateAsync(walletAddress as string);
     clearSelection();
     closeContactProfile();
   }
 
-  async function handleStartAliasChat() {
-    if (!walletAddress) return;
-    setAliasError(null);
-    try {
-      await createInviteForContact.mutateAsync({ recipientWallet: walletAddress });
-    } catch (e) {
-      setAliasError(String(e));
-    }
+  async function handleCopyAddress() {
+    await navigator.clipboard.writeText(walletAddress as string);
+    setAddressCopied(true);
+    setTimeout(() => setAddressCopied(false), 1500);
   }
 
-  async function handleAcceptAliasInvite() {
-    if (!theirIncomingAliasInvite) return;
+  async function handleAliasAction() {
     setAliasError(null);
     try {
-      const newContact = await acceptIncomingInvite.mutateAsync({ inviteRef: theirIncomingAliasInvite.inviteRef });
-      selectAliasContact(newContact.contactId);
-      closeContactProfile();
+      if (existingAliasContact) {
+        selectAliasContact(existingAliasContact.contactId);
+        closeContactProfile();
+      } else if (theirIncomingAliasInvite) {
+        const newContact = await acceptIncomingInvite.mutateAsync({
+          inviteRef: theirIncomingAliasInvite.inviteRef,
+        });
+        selectAliasContact(newContact.contactId);
+        closeContactProfile();
+      } else if (!myPendingAliasInvite) {
+        await createInviteForContact.mutateAsync({
+          recipientWallet: walletAddress as string,
+        });
+      }
     } catch (e) {
       setAliasError(String(e));
     }
@@ -89,95 +145,189 @@ export function ContactProfile() {
   return (
     <div className="contact-profile">
       <div className="contact-profile__header">
-        <button className="sidebar__icon-btn" onClick={closeContactProfile} aria-label="Back">
+        <button
+          className="sidebar__icon-btn"
+          onClick={closeContactProfile}
+          aria-label="Back"
+        >
           ←
         </button>
-        <h2 className="settings-screen__title">Contact</h2>
+        <div className="contact-profile__header-inner">
+          <h2 className="contact-profile__header-name">
+            {displayName ?? formatWalletAddress(walletAddress)}
+          </h2>
+          <div className="contact-profile__header-actions">
+            <button
+              className="contact-profile__icon-btn"
+              onClick={openChat}
+              aria-label="Open chat"
+            >
+              <IconChatBubble />
+            </button>
+            <button
+              className="contact-profile__icon-btn"
+              disabled
+              title="Coming soon"
+              aria-label="Call"
+            >
+              <IconPhone />
+            </button>
+            <button
+              className="contact-profile__alias-pill"
+              disabled={!!myPendingAliasInvite || aliasBusy}
+              onClick={handleAliasAction}
+            >
+              <IconChatBubble /> Alias Chat
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="contact-profile__body">
-        {contact?.username ?? resolvedUsername ? (
-          <span className="contact-profile__avatar" style={{ background: avatarColor(walletAddress) }}>
-            {initials((contact?.username ?? resolvedUsername) as string)}
+        {contact?.isBlocked ? (
+          <span className="contact-profile__badge contact-profile__badge--danger">
+            Blocked
           </span>
         ) : (
-          <span className="contact-profile__avatar contact-profile__avatar--dm">DM</span>
+          contact?.isContact && (
+            <span className="contact-profile__badge">
+              <IconUserCheck /> In contacts
+            </span>
+          )
         )}
-        <h3 className="contact-profile__name">{contact?.username ?? resolvedUsername ?? formatWalletAddress(walletAddress)}</h3>
-        <p className="contact-profile__address">{truncateWalletAddress(walletAddress)}</p>
 
-        {contact?.isBlocked && <p className="contact-profile__status contact-profile__status--blocked">Blocked</p>}
-        {contact?.isContact && !contact?.isBlocked && <p className="contact-profile__status">In your contacts</p>}
+        {displayName ? (
+          <span
+            className="contact-profile__avatar"
+            style={{ background: avatarColor(walletAddress) }}
+          >
+            {initials(displayName)}
+          </span>
+        ) : (
+          <span className="contact-profile__avatar contact-profile__avatar--dm">
+            DM
+          </span>
+        )}
 
-        <div className="contact-profile__actions">
+        <div className="contact-profile__section">
+          <div className="contact-profile__section-label">Wallet address</div>
+          <div className="contact-profile__qr-card">
+            <QrCode value={walletAddress} size={160} />
+          </div>
+          <div className="contact-profile__address-row">
+            <span className="contact-profile__address-text">
+              {walletAddress}
+            </span>
+            <button
+              className="contact-profile__copy-btn"
+              onClick={handleCopyAddress}
+              aria-label="Copy address"
+              title={addressCopied ? "Copied!" : "Copy"}
+            >
+              <IconCheck />
+            </button>
+          </div>
+        </div>
+
+        <div className="contact-profile__section">
+          <div className="contact-profile__section-label">Bio</div>
+          <p className="contact-profile__bio contact-profile__bio--disabled">
+            Not available yet.
+          </p>
+        </div>
+
+        <div className="contact-profile__section">
+          <div className="contact-profile__section-label">Contact</div>
+
           {contact?.isContact ? (
-            <button
-              className="btn btn--secondary settings-btn-full"
+            <ProfileActionRow
+              icon={<IconUserMinus />}
+              label="Remove From Contacts"
+              tone="danger"
+              buttonLabel="Remove"
               disabled={busy}
-              onClick={() => removeFromContacts.mutate(walletAddress)}
-            >
-              Remove from contacts
-            </button>
+              onClick={() => removeFromContacts.mutate(walletAddress as string)}
+            />
           ) : (
-            <button
-              className="btn btn--secondary settings-btn-full"
-              disabled={busy || contact?.isBlocked}
-              onClick={() => addToContacts.mutate(walletAddress)}
-            >
-              Add to contacts
-            </button>
+            <ProfileActionRow
+              icon={<IconUserPlus />}
+              label="Add to Contacts"
+              tone="neutral"
+              buttonLabel="Add"
+              disabled={busy || !!contact?.isBlocked}
+              onClick={() => addToContacts.mutate(walletAddress as string)}
+            />
           )}
 
           {contact?.isBlocked ? (
-            <button className="btn btn--secondary settings-btn-full" disabled={busy} onClick={() => unblockContact.mutate(walletAddress)}>
-              Unblock
-            </button>
+            <ProfileActionRow
+              icon={<IconLockOpen />}
+              label="Unblock Wallet"
+              tone="neutral"
+              buttonLabel="Remove from Spam"
+              disabled={busy}
+              onClick={() => unblockContact.mutate(walletAddress as string)}
+            />
           ) : (
-            <button className="btn btn--danger settings-btn-full" disabled={busy} onClick={() => blockContact.mutate(walletAddress)}>
-              Block
-            </button>
+            <ProfileActionRow
+              icon={<IconLock />}
+              label="Block Wallet"
+              tone="danger"
+              buttonLabel="Block"
+              disabled={busy}
+              onClick={() => blockContact.mutate(walletAddress as string)}
+            />
           )}
+
+          <ProfileActionRow
+            icon={<IconChatBubble />}
+            label="Create Alias Chat"
+            tone="accent"
+            buttonLabel={aliasLabel}
+            disabled={!!myPendingAliasInvite || aliasBusy}
+            onClick={handleAliasAction}
+          />
+          {aliasError && <p className="pin-pad__error">{aliasError}</p>}
 
           <button
-            className="btn btn--primary settings-btn-full"
-            onClick={() => {
-              selectContact(walletAddress);
-              closeContactProfile();
-            }}
+            className="btn btn--text contact-profile__delete-link"
+            disabled={busy}
+            onClick={handleDelete}
           >
-            Open chat
-          </button>
-
-          {aliasError && <p className="pin-pad__error">{aliasError}</p>}
-          {existingAliasContact ? (
-            <button
-              className="btn btn--secondary settings-btn-full"
-              onClick={() => {
-                selectAliasContact(existingAliasContact.contactId);
-                closeContactProfile();
-              }}
-            >
-              Open alias chat
-            </button>
-          ) : myPendingAliasInvite ? (
-            <button className="btn btn--secondary settings-btn-full" disabled>
-              Alias invite pending…
-            </button>
-          ) : theirIncomingAliasInvite ? (
-            <button className="btn btn--secondary settings-btn-full" disabled={acceptIncomingInvite.isPending} onClick={handleAcceptAliasInvite}>
-              {acceptIncomingInvite.isPending ? "Accepting…" : "Accept alias invite"}
-            </button>
-          ) : (
-            <button className="btn btn--secondary settings-btn-full" disabled={createInviteForContact.isPending} onClick={handleStartAliasChat}>
-              {createInviteForContact.isPending ? "Sending…" : "Start alias chat"}
-            </button>
-          )}
-
-          <button className="btn btn--text settings-btn-full" disabled={busy} onClick={handleDelete}>
             Delete contact (clears cached keys/name too)
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProfileActionRow({
+  icon,
+  label,
+  tone,
+  buttonLabel,
+  disabled,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  tone: "danger" | "neutral" | "accent";
+  buttonLabel: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className={`contact-profile__row contact-profile__row--${tone}`}>
+      <span className="contact-profile__row-icon">{icon}</span>
+      <span className="contact-profile__row-label">{label}</span>
+      <button
+        className={`contact-profile__row-btn contact-profile__row-btn--${tone}`}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {buttonLabel}
+      </button>
     </div>
   );
 }

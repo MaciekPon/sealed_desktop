@@ -1,20 +1,42 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useChatUiStore } from "../../stores/chatUiStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useCredits, useRedeemCode } from "../../queries/credits";
 import { useWalletBalance } from "../../queries/wallet";
+import { useResolvedUsername } from "../../queries/contacts";
 import { useClaimUsername, useReleaseUsername } from "../../queries/username";
 import { useForceResync, useSyncMessages } from "../../queries/messaging";
 import { useDisableTerminationCode, useIsTerminationConfigured, useSetTerminationCode } from "../../queries/settings";
 import { settings as settingsApi, keys as keysApi } from "../../lib/tauri";
 import { PinPad } from "../auth/PinPad";
-import { formatAlgoBalance } from "../../lib/format";
+import { QrCode } from "../alias/QrCode";
+import { formatAlgoBalance, truncateWalletAddress } from "../../lib/format";
+import {
+  IconAt,
+  IconAtom,
+  IconBell,
+  IconChevronRight,
+  IconFilter,
+  IconInfo,
+  IconKey,
+  IconLock,
+  IconPencil,
+  IconPlus,
+  IconPower,
+  IconRefresh,
+  IconShieldOff,
+  IconStar,
+  IconTrash,
+  IconWallet,
+} from "./icons";
 import "./settings.css";
 
 type View =
   | "main"
+  | "username"
+  | "redeemCode"
+  | "walletReveal"
   | "changePin_old"
   | "changePin_new"
   | "changePin_confirm"
@@ -30,9 +52,24 @@ type View =
  * username, PIN change, termination code, seed backup, and log out. Mirrors
  * `ui/settings/screens/settings.dart` + `change_pin_flow.dart` +
  * `change_termination_flow.dart`'s flow *shape* (not their widget code).
+ *
+ * Main-view layout restyled 2026-08-18 to match a supplied design mockup —
+ * see the plan/memory entry for the source screenshots. Rows that need
+ * backend work the app doesn't have yet (Bio, Top up Wallet, Push
+ * notification, Auto-Delete Local Files, Falcon/post-quantum transactions,
+ * Spam filter) are rendered per the mockup but disabled/non-interactive,
+ * per an explicit product decision rather than silently guessed at. Real,
+ * already-working features that don't appear in the mockup at all
+ * (auto-sync toggle, "Sync now", "Republish keys") are kept in an
+ * "Advanced" section below the mockup's sections rather than deleted.
+ *
+ * Hosted inside `NavDrawer` (not a standalone `screen`) per the mockup —
+ * the drawer's own panel swaps to this content instead of the whole app
+ * navigating away, so `onClose` is passed in by the caller rather than
+ * reaching for `useChatUiStore` directly, keeping this component
+ * embeddable regardless of where it's shown from.
  */
-export function SettingsScreen() {
-  const closeSettings = useChatUiStore((s) => s.closeSettings);
+export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const account = useSessionStore((s) => s.account);
   const changePin = useSessionStore((s) => s.changePin);
   const logOut = useSessionStore((s) => s.logOut);
@@ -48,6 +85,7 @@ export function SettingsScreen() {
 
   const { data: credits } = useCredits();
   const { data: balanceMicroAlgos } = useWalletBalance();
+  const { data: myUsername } = useResolvedUsername(account?.walletAddress ?? "", !!account);
   const redeemCode = useRedeemCode();
   const claimUsername = useClaimUsername();
   const releaseUsername = useReleaseUsername();
@@ -229,6 +267,7 @@ export function SettingsScreen() {
       setNotice("Code redeemed.");
       setRedeemCodeInput("");
       setRedeemUsernameInput("");
+      backToMain();
     } catch (e) {
       setError(String(e));
     }
@@ -399,43 +438,22 @@ export function SettingsScreen() {
     );
   }
 
-  return (
-    <div className="settings-screen">
-      <div className="settings-screen__header">
-        <h2 className="settings-screen__title">Settings</h2>
-        <button className="sidebar__icon-btn" onClick={closeSettings} aria-label="Close settings">
-          ✕
-        </button>
-      </div>
-
-      <div className="settings-screen__body">
-        {notice && <p className="settings-screen__notice">{notice}</p>}
-        {error && <p className="pin-pad__error">{error}</p>}
-
-        <section className="settings-section">
-          <h3 className="settings-section__title">Account</h3>
-          <div className="settings-row settings-row--address">
-            <span className="settings-row__value settings-row__value--address">{account?.walletAddress ?? "—"}</span>
-            <button className="btn btn--secondary" disabled={!account} onClick={handleCopyAddress}>
-              {addressCopied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <div className="settings-row">
-            <span className="settings-row__label">Balance</span>
-            <span className="settings-row__value">{balanceMicroAlgos !== undefined ? formatAlgoBalance(balanceMicroAlgos) : "—"}</span>
-          </div>
-          <p className="settings-screen__hint">
-            Your encryption keys publish on-chain automatically on unlock, silently. If someone new can't decrypt
-            messages you receive from them (they see your messages fine, but you don't see theirs), republish here
-            to confirm it actually went through.
-          </p>
-          <button className="btn btn--secondary settings-btn-full" disabled={republishKeys.isPending} onClick={handleRepublishKeys}>
-            {republishKeys.isPending ? "Publishing…" : "Republish keys"}
+  if (view === "username") {
+    return (
+      <div className="settings-screen">
+        <div className="settings-screen__header">
+          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
+            ←
           </button>
-        </section>
-
-        <section className="settings-section">
-          <h3 className="settings-section__title">Username</h3>
+          <h2 className="settings-screen__title">Username</h2>
+        </div>
+        <div className="settings-screen__body">
+          {notice && <p className="settings-screen__notice">{notice}</p>}
+          {error && <p className="pin-pad__error">{error}</p>}
+          <p className="settings-screen__hint">
+            {myUsername ? `Your current username is @${myUsername}.` : "You haven't claimed a username yet."} Usernames are
+            public, on-chain, and let others find you without your wallet address.
+          </p>
           <div className="settings-row settings-row--form">
             <input
               className="settings-input"
@@ -447,17 +465,29 @@ export function SettingsScreen() {
               {claimUsername.isPending ? "Claiming…" : "Claim"}
             </button>
           </div>
-          <button className="btn btn--text settings-btn-full" disabled={releaseUsername.isPending} onClick={handleRelease}>
-            Release my current username
-          </button>
-        </section>
+          {myUsername && (
+            <button className="btn btn--text settings-btn-full" disabled={releaseUsername.isPending} onClick={handleRelease}>
+              Release my current username
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
-        <section className="settings-section">
-          <h3 className="settings-section__title">Credits</h3>
-          <div className="settings-row">
-            <span className="settings-row__label">Balance</span>
-            <span className="settings-row__value">{credits ?? "—"}</span>
-          </div>
+  if (view === "redeemCode") {
+    return (
+      <div className="settings-screen">
+        <div className="settings-screen__header">
+          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
+            ←
+          </button>
+          <h2 className="settings-screen__title">Redeem code</h2>
+        </div>
+        <div className="settings-screen__body">
+          {notice && <p className="settings-screen__notice">{notice}</p>}
+          {error && <p className="pin-pad__error">{error}</p>}
+          <p className="settings-screen__hint">Enter a credit code to top up your balance — 1 credit sends 1 message.</p>
           <div className="settings-row settings-row--form">
             <input
               className="settings-input"
@@ -475,52 +505,140 @@ export function SettingsScreen() {
             value={redeemUsernameInput}
             onChange={(e) => setRedeemUsernameInput(e.target.value)}
           />
-        </section>
+        </div>
+      </div>
+    );
+  }
 
-        <section className="settings-section">
-          <h3 className="settings-section__title">Sync</h3>
-          <label className="settings-row settings-row--toggle">
-            <span className="settings-row__label">Auto-sync in background</span>
-            <input type="checkbox" checked={autoSyncEnabled} onChange={(e) => setAutoSyncEnabled(e.target.checked)} />
-          </label>
-          <p className="settings-screen__hint">
-            Background sync checks for new messages every 8 seconds while unlocked. Use "Sync now" for an immediate
-            check (cheap, only fetches what changed since the last sync). If a message you can see on another
-            device still isn't showing up after that, force a full resync from the chain instead.
-          </p>
-          <button className="btn btn--secondary settings-btn-full" disabled={syncNow.isPending} onClick={handleSyncNow}>
-            {syncNow.isPending ? "Syncing…" : "Sync now"}
+  if (view === "walletReveal") {
+    return (
+      <div className="settings-screen">
+        <div className="settings-screen__header">
+          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
+            ←
           </button>
-          <button className="btn btn--secondary settings-btn-full" disabled={forceResync.isPending} onClick={handleForceResync}>
-            {forceResync.isPending ? "Syncing…" : "Force resync"}
-          </button>
-        </section>
+          <h2 className="settings-screen__title">Wallet address</h2>
+        </div>
+        <div className="settings-screen__body settings-screen__body--centered">
+          {account && <QrCode value={account.walletAddress} size={200} />}
+          <div className="settings-row settings-row--address">
+            <span className="settings-row__value settings-row__value--address">{account?.walletAddress ?? "—"}</span>
+            <button className="btn btn--secondary" disabled={!account} onClick={handleCopyAddress}>
+              {addressCopied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <div className="settings-row">
+            <span className="settings-row__label">Balance</span>
+            <span className="settings-row__value">{balanceMicroAlgos !== undefined ? formatAlgoBalance(balanceMicroAlgos) : "—"}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-        <section className="settings-section">
-          <h3 className="settings-section__title">Security</h3>
-          <button className="btn btn--secondary settings-btn-full" onClick={() => setView("changePin_old")}>
-            Change PIN
-          </button>
-          <button className="btn btn--secondary settings-btn-full" onClick={() => setView("seed_verify")}>
-            View recovery phrase
-          </button>
-          {terminationConfigured ? (
-            <button className="btn btn--secondary settings-btn-full" onClick={startDisableTermination}>
-              Disable termination code
-            </button>
-          ) : (
-            <button className="btn btn--secondary settings-btn-full" onClick={startSetTermination}>
-              Set termination code
-            </button>
-          )}
-        </section>
+  return (
+    <div className="settings-screen">
+      <div className="settings-screen__header">
+        <h2 className="settings-screen__title">Settings</h2>
+        <button className="sidebar__icon-btn" onClick={onClose} aria-label="Close settings">
+          ✕
+        </button>
+      </div>
+
+      <div className="settings-screen__body">
+        {notice && <p className="settings-screen__notice">{notice}</p>}
+        {error && <p className="pin-pad__error">{error}</p>}
+
+        <SettingsSection title="My Account">
+          <SettingsListRow
+            icon={<IconAt />}
+            label="Username"
+            sublabel={myUsername ? `@${myUsername}` : "Not claimed"}
+            right={<IconChevronRight />}
+            onClick={() => setView("username")}
+          />
+          <SettingsListRow icon={<IconPencil />} label="Bio Description" sublabel="Not available yet" disabled />
+          <SettingsListRow
+            icon={<IconWallet />}
+            label="Wallet"
+            sublabel={account ? truncateWalletAddress(account.walletAddress) : "—"}
+            right={<span className="settings-list-row__btn">Show wallet</span>}
+            onClick={() => setView("walletReveal")}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="App Credits">
+          <SettingsListRow
+            icon={<IconInfo />}
+            label="Sealed Credits"
+            sublabel={`enough to send ${credits ?? 0} Messages`}
+            right={<span className="settings-list-row__pill">{credits ?? "—"}</span>}
+          />
+          <SettingsListRow
+            icon={<IconStar />}
+            label="Redeem code"
+            sublabel="Enter the code and claim your credits"
+            right={<IconChevronRight />}
+            onClick={() => setView("redeemCode")}
+          />
+          <SettingsListRow icon={<IconPlus />} label="Top up Wallet" sublabel="Add credits to your account" disabled />
+        </SettingsSection>
+
+        <SettingsSection title="Notification">
+          <SettingsListRow icon={<IconBell />} label="Push notification" disabled right={<ToggleIndicator on={false} disabled />} />
+        </SettingsSection>
+
+        <SettingsSection title="Passwords">
+          <SettingsListRow icon={<IconLock />} label="Change pass code" right={<IconChevronRight />} onClick={() => setView("changePin_old")} />
+          <SettingsListRow
+            icon={<IconShieldOff />}
+            label="Change termination code"
+            sublabel={terminationConfigured ? "Currently set" : "Not set"}
+            right={<IconChevronRight />}
+            onClick={terminationConfigured ? startDisableTermination : startSetTermination}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Preferences">
+          <SettingsListRow icon={<IconTrash />} label="Auto-Delete Local Files" sublabel="Enable Local Data Wipe" disabled right={<ToggleIndicator on={false} disabled />} />
+          <SettingsListRow
+            icon={<IconRefresh className={forceResync.isPending ? "settings-list-row__icon--spin" : undefined} />}
+            label="Force re-sync"
+            sublabel="re-sync all messages and files"
+            right={<span className="settings-list-row__status">{forceResync.isPending ? "Syncing…" : "Synced ✓"}</span>}
+            onClick={handleForceResync}
+          />
+          <SettingsListRow icon={<IconAtom />} label="Falcon" sublabel="Post-quantum Transaction" disabled right={<ToggleIndicator on={false} disabled />} />
+          <SettingsListRow icon={<IconFilter />} label="Spam filter" disabled right={<ToggleIndicator on={false} disabled />} />
+        </SettingsSection>
+
+        <SettingsSection title="Advanced">
+          <SettingsListRow
+            icon={<IconRefresh />}
+            label="Auto-sync in background"
+            sublabel="Checks for new messages every few seconds while unlocked"
+            right={<ToggleIndicator on={autoSyncEnabled} onClick={() => setAutoSyncEnabled(!autoSyncEnabled)} />}
+          />
+          <SettingsListRow
+            icon={<IconRefresh />}
+            label="Sync now"
+            sublabel="Quick check for anything new since the last sync"
+            right={<span className="settings-list-row__status">{syncNow.isPending ? "Syncing…" : ""}</span>}
+            onClick={handleSyncNow}
+          />
+          <SettingsListRow
+            icon={<IconKey />}
+            label="Republish keys"
+            sublabel="Confirm your encryption keys are up to date on-chain"
+            right={<span className="settings-list-row__status">{republishKeys.isPending ? "Publishing…" : ""}</span>}
+            onClick={handleRepublishKeys}
+          />
+          <SettingsListRow icon={<IconKey />} label="View recovery phrase" right={<IconChevronRight />} onClick={() => setView("seed_verify")} />
+        </SettingsSection>
 
         <section className="settings-section settings-section--danger">
-          <h3 className="settings-section__title">Danger zone</h3>
           {!confirmingLogout ? (
-            <button className="btn btn--danger settings-btn-full" onClick={() => setConfirmingLogout(true)}>
-              Log out
-            </button>
+            <SettingsListRow icon={<IconPower />} label="Log out" danger onClick={() => setConfirmingLogout(true)} />
           ) : (
             <div className="settings-row--form">
               <p className="settings-screen__hint">This wipes this device's local data. Make sure you've backed up your recovery phrase.</p>
@@ -535,5 +653,63 @@ export function SettingsScreen() {
         </section>
       </div>
     </div>
+  );
+}
+
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="settings-section">
+      <h3 className="settings-section__title settings-section__title--accent">{title}</h3>
+      <div className="settings-list">{children}</div>
+    </section>
+  );
+}
+
+function SettingsListRow({
+  icon,
+  label,
+  sublabel,
+  right,
+  onClick,
+  disabled,
+  danger,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sublabel?: string;
+  right?: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  const clickable = !!onClick && !disabled;
+  const Tag = clickable ? "button" : "div";
+  return (
+    <Tag
+      className={`settings-list-row ${disabled ? "settings-list-row--disabled" : ""} ${danger ? "settings-list-row--danger" : ""}`}
+      onClick={clickable ? onClick : undefined}
+    >
+      <span className={`settings-list-row__icon ${danger ? "settings-list-row__icon--danger" : ""}`}>{icon}</span>
+      <span className="settings-list-row__text">
+        <span className="settings-list-row__label">{label}</span>
+        {sublabel && <span className="settings-list-row__sublabel">{sublabel}</span>}
+      </span>
+      {right && <span className="settings-list-row__right">{right}</span>}
+    </Tag>
+  );
+}
+
+/** Visual-only toggle pill. `onClick` present + no `disabled` makes it interactive; otherwise it's a static, dimmed indicator for a setting with no backend yet. */
+function ToggleIndicator({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick?: () => void }) {
+  const interactive = !!onClick && !disabled;
+  return (
+    <span
+      role={interactive ? "switch" : undefined}
+      aria-checked={interactive ? on : undefined}
+      className={`settings-toggle ${on ? "settings-toggle--on" : ""} ${disabled ? "settings-toggle--disabled" : ""}`}
+      onClick={interactive ? onClick : undefined}
+    >
+      <span className="settings-toggle__dot" />
+    </span>
   );
 }

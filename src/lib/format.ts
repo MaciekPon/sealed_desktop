@@ -85,9 +85,13 @@ export function formatAlgoBalance(microAlgos: number): string {
 export function formatMessageTimestamp(unixSeconds: number): string {
   const date = new Date(unixSeconds * 1000);
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  if (isToday) {
+  if (date.toDateString() === now.toDateString()) {
     return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
   }
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

@@ -1,8 +1,8 @@
 import { ContactsSidebar } from "../chat/ContactsSidebar";
 import { ChatWindow } from "../chat/ChatWindow";
-import { SettingsScreen } from "../settings/SettingsScreen";
 import { ContactProfile } from "../contacts/ContactProfile";
-import { AliasScreen } from "../alias/AliasScreen";
+import { ContactsListScreen } from "../contacts/ContactsListScreen";
+import { NavDrawer } from "./NavDrawer";
 import { useChatUiStore } from "../../stores/chatUiStore";
 import "../chat/chat.css";
 
@@ -12,10 +12,10 @@ export function MainLayout() {
   return (
     <div className="main-layout">
       <ContactsSidebar />
-      {screen === "settings" && <SettingsScreen />}
       {screen === "contactProfile" && <ContactProfile />}
-      {screen === "alias" && <AliasScreen />}
+      {screen === "contactsList" && <ContactsListScreen />}
       {screen === "chat" && <ChatWindow />}
+      <NavDrawer />
     </div>
   );
 }

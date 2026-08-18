@@ -2,8 +2,8 @@
    (sealed_app/lib/shared/widgets/theme.dart) so the desktop client reads
    as the same product, not a reskin. */
 :root {
-  --color-bg: #030303;
-  --color-bg-gradient-top: #003c37;
+  /* Flat, no gradient tint — per explicit user spec (2026-08-18). */
+  --color-bg: #050a0a;
   --color-card: #0c0c0c;
   --color-card-alt: rgba(255, 255, 255, 0.06);
   --color-divider: #262626;
@@ -20,10 +20,11 @@
   --color-text-tertiary: rgba(255, 255, 255, 0.38);
   --color-error: #e57373;
 
-  --color-outgoing-bubble-start: rgba(99, 179, 164, 0.4);
-  --color-outgoing-bubble-end: rgba(74, 221, 194, 0.1);
-  --color-incoming-bubble-start: rgba(255, 255, 255, 0.2);
-  --color-incoming-bubble-end: rgba(255, 255, 255, 0.02);
+  /* Solid fills, exact hex per user spec (2026-08-18) — not gradients. */
+  --color-outgoing-bubble: #6bfad6;
+  --color-outgoing-bubble-text: #000000;
+  --color-incoming-bubble: #19191a;
+  --color-incoming-bubble-text: #ffffff;
 
   --radius-lg: 20px;
   --radius-md: 16px;
@@ -44,7 +45,7 @@ body,
 }
 
 body {
-  background: radial-gradient(ellipse at top, var(--color-bg-gradient-top) 0%, var(--color-bg) 55%);
+  background: var(--color-bg);
   color: var(--color-text);
   font-family:
     "Inter",

@@ -1,0 +1,137 @@
+.nav-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 100;
+  display: flex;
+}
+
+.nav-drawer {
+  width: 280px;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-card);
+  border-right: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+}
+
+/* Settings / Contacts list, hosted inside the drawer — those screens bring
+   their own header/body padding, so the drawer's own padding is dropped
+   here to avoid doubling up; wider to comfortably fit form rows / the
+   wallet QR code. */
+.nav-drawer--wide {
+  width: 340px;
+  padding: 0;
+}
+
+.nav-drawer__profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.nav-drawer__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 10px;
+}
+
+.nav-drawer__avatar--dm {
+  background: rgba(64, 190, 146, 0.16);
+  color: var(--color-primary);
+}
+
+.nav-drawer__name {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.nav-drawer__edit-profile {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 12.5px;
+  padding: 4px 0 0;
+}
+
+.nav-drawer__nav {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-drawer__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
+.nav-drawer__item:hover:not(:disabled) {
+  background: var(--color-card-alt);
+}
+
+.nav-drawer__item--active {
+  color: var(--color-primary);
+}
+
+.nav-drawer__item--disabled {
+  opacity: 0.4;
+}
+
+.nav-drawer__item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+}
+
+.nav-drawer__footer {
+  border-top: 1px solid var(--color-divider);
+  padding-top: 14px;
+}
+
+.nav-drawer__footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.nav-drawer__credits-pill {
+  background: var(--color-primary-dark);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.nav-drawer__footer-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 4px 0 0;
+}

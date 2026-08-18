@@ -156,7 +156,10 @@ function conversationPreviews(): ConversationPreview[] {
       lastMessagePreview: last.content,
       lastMessageTimestamp: last.timestamp,
       isLastMessageOutgoing: last.isOutgoing,
-      unreadCount: 0,
+      // No real read-tracking in mock mode — approximate with "how many
+      // incoming messages exist at all" so the unread badge has something
+      // nonzero to show for visual testing.
+      unreadCount: messages.filter((m) => !m.isOutgoing).length,
       messageCount: messages.length,
       isBlocked: contact?.isBlocked ?? false,
     });

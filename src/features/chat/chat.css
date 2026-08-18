@@ -13,14 +13,7 @@
   flex-direction: column;
   border-right: 1px solid var(--color-divider);
   background: rgba(0, 0, 0, 0.2);
-  transition: min-width 0.15s ease, width 0.15s ease;
   overflow: hidden;
-}
-
-.sidebar--collapsed {
-  width: 0;
-  min-width: 0;
-  border-right: none;
 }
 
 .sidebar__header {
@@ -30,15 +23,19 @@
   padding: 20px 16px 12px;
 }
 
-.sidebar__title {
-  font-size: 17px;
-  font-weight: 700;
-  margin: 0;
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.sidebar__header-actions {
-  display: flex;
-  gap: 8px;
+.sidebar__brand-mark {
+  flex-shrink: 0;
+}
+
+.sidebar__brand-name {
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .sidebar__icon-btn {
@@ -52,29 +49,44 @@
   align-items: center;
   justify-content: center;
   font-size: 14px;
+  flex-shrink: 0;
 }
 
-.sidebar__tabs {
+.sidebar__section {
+  margin-bottom: 4px;
+}
+
+.sidebar__section-header {
   display: flex;
-  gap: 4px;
-  padding: 0 16px 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 12px 8px 8px;
 }
 
-.sidebar__tab {
-  flex: 1;
-  background: transparent;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
+.sidebar__section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sidebar__section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  padding: 8px 0;
+  color: var(--color-primary);
 }
 
-.sidebar__tab--active {
-  background: var(--color-card-alt);
-  color: var(--color-text);
-  border-color: var(--color-primary);
+.sidebar__section-chevron {
+  transition: transform 0.15s ease;
+}
+
+.sidebar__section-chevron--up {
+  transform: rotate(180deg);
 }
 
 .sidebar__search-row {
@@ -117,6 +129,11 @@
   flex: 1;
   overflow-y: auto;
   padding: 0 12px 16px;
+}
+
+.sidebar__section-body {
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar__group-label {
@@ -201,8 +218,21 @@
   flex: 1;
 }
 
+.sidebar__row-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar__row-line + .sidebar__row-line {
+  margin-top: 2px;
+}
+
 .sidebar__row-name {
   display: block;
+  flex: 1;
+  min-width: 0;
   font-size: 13.5px;
   font-weight: 500;
   white-space: nowrap;
@@ -212,13 +242,55 @@
 
 .sidebar__row-address {
   display: block;
-  margin-top: 2px;
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
   color: var(--color-primary);
   font-family: "SFMono-Regular", Consolas, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Alias-section rows still stack name/address as direct siblings (no
+   per-line wrapper like ConversationRow's two `.sidebar__row-line`s) — this
+   only matches that case, since in ConversationRow the address lives in a
+   *different* `.sidebar__row-line` than the name, already spaced by the
+   `.sidebar__row-line + .sidebar__row-line` rule above. */
+.sidebar__row-name + .sidebar__row-address {
+  margin-top: 2px;
+}
+
+.sidebar__row-preview {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar__row-time {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+}
+
+.sidebar__unread-badge {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #04211a;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sidebar__empty {
@@ -243,14 +315,6 @@
   gap: 12px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--color-divider);
-}
-
-.chat-window__sidebar-toggle {
-  background: transparent;
-  border: none;
-  color: var(--color-text-secondary);
-  font-size: 16px;
-  padding: 4px;
 }
 
 .chat-window__header-name {
@@ -287,6 +351,7 @@
 }
 
 .bubble {
+  position: relative;
   max-width: 60%;
   padding: 10px 14px;
   border-radius: var(--radius-md);
@@ -297,20 +362,89 @@
 
 .bubble--outgoing {
   align-self: flex-end;
-  background: linear-gradient(135deg, var(--color-outgoing-bubble-start), var(--color-outgoing-bubble-end));
-  border-bottom-right-radius: 4px;
+  background: var(--color-outgoing-bubble);
+  color: var(--color-outgoing-bubble-text);
+  border-bottom-right-radius: 3px;
 }
 
 .bubble--incoming {
   align-self: flex-start;
-  background: linear-gradient(135deg, var(--color-incoming-bubble-start), var(--color-incoming-bubble-end));
-  border-bottom-left-radius: 4px;
+  background: var(--color-incoming-bubble);
+  color: var(--color-incoming-bubble-text);
+  border-bottom-left-radius: 3px;
+}
+
+/* Speech-bubble "tail" at the flattened corner — the standard two-pseudo-
+   element trick: `::before` extends the bubble's own fill color outward
+   past the bubble's edge into a rounded nub (`right:-8px`, wider than it
+   needs to be); `::after`, painted in the page's flat `--color-bg`, sits
+   on top starting exactly at the bubble's own edge (`right:-10px` — i.e.
+   its *left* edge lands at the bubble boundary, zero gap) and extends
+   further out than `::before` does, so it fully covers and re-curves the
+   outer portion of the nub with no seam and no leftover bg-colored
+   rectangle inside the bubble. (Getting either offset wrong — e.g. `0`
+   instead of `-10px` — puts the mask *inside* the bubble instead of over
+   the nub, which is what produced the stray black rectangle.) */
+.bubble--outgoing::before,
+.bubble--outgoing::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 20px;
+}
+
+.bubble--outgoing::before {
+  z-index: 0;
+  right: -6px;
+  width: 20px;
+  background: var(--color-outgoing-bubble);
+  border-bottom-left-radius: 15px;
+}
+
+.bubble--outgoing::after {
+  z-index: 1;
+  right: -10px;
+  width: 10px;
+  background: var(--color-bg);
+  border-bottom-left-radius: 10px;
+}
+
+.bubble--incoming::before,
+.bubble--incoming::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 20px;
+}
+
+.bubble--incoming::before {
+  z-index: 0;
+  left: -8px;
+  width: 20px;
+  background: var(--color-incoming-bubble);
+  border-bottom-right-radius: 15px;
+}
+
+.bubble--incoming::after {
+  z-index: 1;
+  left: -10px;
+  width: 10px;
+  background: var(--color-bg);
+  border-bottom-right-radius: 10px;
 }
 
 .bubble__meta {
   display: block;
   margin-top: 4px;
   font-size: 10px;
+  text-align: right;
+}
+
+.bubble--outgoing .bubble__meta {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.bubble--incoming .bubble__meta {
   color: var(--color-text-tertiary);
 }
 

@@ -3,12 +3,10 @@ import { useContacts, useResolveContactKeys, useResolvedUsername, useSaveContact
 import { useConversations } from "../../queries/messaging";
 import { useAliasContacts, useIncomingInvites } from "../../queries/alias";
 import { useChatUiStore } from "../../stores/chatUiStore";
-import { avatarColor, formatWalletAddress, initials, isValidAlgorandAddress, truncateWalletAddress } from "../../lib/format";
+import { avatarColor, formatMessageTimestamp, formatWalletAddress, initials, isValidAlgorandAddress } from "../../lib/format";
 import { username as usernameApi } from "../../lib/tauri";
 import type { ConversationPreview } from "../../models";
 import "./chat.css";
-
-type Tab = "chats" | "alias" | "spam";
 
 /**
  * Left panel: a chat list — one row per conversation, newest first, exactly
@@ -24,27 +22,43 @@ type Tab = "chats" | "alias" | "spam";
  * conversation list or the local contact cache matches, it offers to
  * resolve the typed wallet address or username and start a fresh thread.
  *
- * Chats/Spam split the same conversation list by one predicate —
- * `isBlocked` (from `contacts_cache.is_blocked`, `false` if no cached row
- * exists). Mirrors `message_repository.dart`'s "the sole Spam-tab
- * predicate" comment on the same query. A third Alias tab (mirrors
- * mobile's `ChatsTab.{chats, aliasChats, spam}`) lists established alias
- * contacts plus any invites delivered via a regular DM still awaiting an
- * Accept/Decline decision (Phase 7h) — entirely separate data, not part of
- * the message-driven conversation list above.
+ * Restyled 2026-08-18 to match a supplied design mockup: Contacts/Alias
+ * Chat/Spam are three independently collapsible sections in one scrollable
+ * list (each with its own Hide/Show toggle) instead of the previous
+ * mutually-exclusive tab-pill switcher. Contacts/Spam still split the same
+ * conversation list by one predicate — `isBlocked` (from
+ * `contacts_cache.is_blocked`, `false` if no cached row exists), mirroring
+ * `message_repository.dart`'s "the sole Spam-tab predicate" comment on the
+ * same query. Alias Chat lists established alias contacts plus any invites
+ * delivered via a regular DM still awaiting an Accept/Decline decision
+ * (Phase 7h) — entirely separate data, not part of the message-driven
+ * conversation list above.
+ *
+ * The hamburger icon opens `NavDrawer` (Chats/Contacts/Files/Settings),
+ * matching the mockup's separate navigation screen. The existing
+ * icon-button row (settings / collapse) stays alongside it rather than
+ * being replaced — same real functionality, just not part of the mockup's
+ * visual scope. The QR/paste alias-chat handshake screen (Phase 7f) was
+ * removed 2026-08-18 — starting an alias chat is now contact-profile-only
+ * (Phase 7h's `createInviteForContact`, in `ContactProfile.tsx`); accepting
+ * an already-arrived invite and chatting on an established alias contact
+ * both still work exactly as before, unaffected by this removal.
+ *
+ * The header's separate Settings icon and the sidebar-collapse toggle were
+ * also removed 2026-08-18 — Settings is reached through the hamburger menu
+ * only now, and the sidebar no longer collapses at all (nothing sets that
+ * state anymore, so `ChatWindow`'s dead re-expand affordance was removed
+ * alongside it).
  */
 export function ContactsSidebar() {
-  const collapsed = useChatUiStore((s) => s.sidebarCollapsed);
   const selectedWallet = useChatUiStore((s) => s.selectedWallet);
   const selectedAliasContactId = useChatUiStore((s) => s.selectedAliasContactId);
   const selectContact = useChatUiStore((s) => s.selectContact);
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
   const selectIncomingInvite = useChatUiStore((s) => s.selectIncomingInvite);
   const selectedIncomingInviteRef = useChatUiStore((s) => s.selectedIncomingInviteRef);
-  const toggleSidebar = useChatUiStore((s) => s.toggleSidebar);
-  const openSettings = useChatUiStore((s) => s.openSettings);
   const openContactProfile = useChatUiStore((s) => s.openContactProfile);
-  const openAlias = useChatUiStore((s) => s.openAlias);
+  const openNavDrawer = useChatUiStore((s) => s.openNavDrawer);
 
   const { data: contacts = [] } = useContacts();
   const { data: conversations = [] } = useConversations();
@@ -54,10 +68,15 @@ export function ContactsSidebar() {
   const resolveKeys = useResolveContactKeys();
   const addToContacts = useAddToContacts();
 
-  const [tab, setTab] = useState<Tab>("chats");
   const [query, setQuery] = useState("");
   const [newChatBusy, setNewChatBusy] = useState(false);
   const [newChatError, setNewChatError] = useState<string | null>(null);
+
+  // Matches the mockup's default state: Contacts open, the other two
+  // collapsed until the user asks to see them.
+  const [contactsExpanded, setContactsExpanded] = useState(true);
+  const [aliasExpanded, setAliasExpanded] = useState(false);
+  const [spamExpanded, setSpamExpanded] = useState(false);
 
   // `contacts_cache` (via `useContacts`) is the proven-correct source for a
   // known contact's name — it's what the sidebar used exclusively before
@@ -82,10 +101,6 @@ export function ContactsSidebar() {
 
   const chatsConversations = useMemo(() => filteredConversations.filter((c) => !c.isBlocked), [filteredConversations]);
   const spamConversations = useMemo(() => filteredConversations.filter((c) => c.isBlocked), [filteredConversations]);
-  // The alias tab renders its own data (aliasContacts/incomingInvites), not
-  // the message-driven conversation list — empty array here, never used by
-  // that branch, just keeps this a total function of `tab`.
-  const visibleConversations = tab === "chats" ? chatsConversations : tab === "spam" ? spamConversations : [];
 
   // "Start Chat" should only offer to create a new thread when the query
   // matches literally nothing already reachable — neither an existing
@@ -136,38 +151,26 @@ export function ContactsSidebar() {
   }
 
   return (
-    <aside className={`sidebar ${collapsed ? "sidebar--collapsed" : ""}`}>
+    <aside className="sidebar">
       <div className="sidebar__header">
-        <h2 className="sidebar__title">Contacts</h2>
-        <div className="sidebar__header-actions">
-          <button className="sidebar__icon-btn" onClick={openAlias} aria-label="New alias chat">
-            ⊞
+        <div className="sidebar__brand">
+          <button className="sidebar__icon-btn" onClick={openNavDrawer} aria-label="Menu">
+            ☰
           </button>
-          <button className="sidebar__icon-btn" onClick={openSettings} aria-label="Settings">
-            ⚙
-          </button>
-          <button className="sidebar__icon-btn" onClick={toggleSidebar} aria-label="Collapse sidebar">
-            ⟨
-          </button>
+          <svg width="20" height="20" viewBox="0 0 120 120" fill="none" className="sidebar__brand-mark">
+            <path
+              d="M52.3082 0.245538C63.0572 -0.751089 73.8681 1.29913 83.5124 6.16081L83.7403 6.27666L83.7445 6.27868C112.098 20.7642 123.378 55.5972 108.978 84.0669C95.3052 111.099 62.7781 122.538 35.3099 111.277L10.4524 119.68L27.3341 89.7793H9.58543C4.35304 81.8393 1.13578 72.7082 0.247669 63.188L0.246328 63.1779C-2.66838 31.3724 20.6188 3.19537 52.3063 0.245538H52.3082ZM66.0651 57.4533L57.1243 73.6179H36.2749L27.3334 89.7813H71.8143C80.7025 89.7813 87.9077 82.5448 87.9084 73.6179C87.9084 64.6906 80.7032 57.4533 71.8143 57.4533H66.0651ZM43.4272 25.1257C34.5389 25.1258 27.3335 32.3624 27.3334 41.2895C27.3336 50.2163 34.539 57.4531 43.4272 57.4533H48.2305L57.1719 41.2895H78.9673L87.9084 25.1257H43.4272Z"
+              fill="var(--color-primary)"
+            />
+          </svg>
+          <span className="sidebar__brand-name">Sealed</span>
         </div>
-      </div>
-
-      <div className="sidebar__tabs">
-        <button className={`sidebar__tab ${tab === "chats" ? "sidebar__tab--active" : ""}`} onClick={() => setTab("chats")}>
-          Chats
-        </button>
-        <button className={`sidebar__tab ${tab === "alias" ? "sidebar__tab--active" : ""}`} onClick={() => setTab("alias")}>
-          Alias{incomingInvites.length > 0 ? ` (${incomingInvites.length})` : ""}
-        </button>
-        <button className={`sidebar__tab ${tab === "spam" ? "sidebar__tab--active" : ""}`} onClick={() => setTab("spam")}>
-          Spam{spamConversations.length > 0 ? ` (${spamConversations.length})` : ""}
-        </button>
       </div>
 
       <div className="sidebar__search-row">
         <input
           className="sidebar__search-input"
-          placeholder="Search, or paste an address / username"
+          placeholder="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -186,57 +189,109 @@ export function ContactsSidebar() {
       {newChatError && <p className="sidebar__new-chat-hint">{newChatError}</p>}
 
       <div className="sidebar__list">
-        {tab !== "alias" && visibleConversations.length === 0 && !showStartChat && (
-          <p className="sidebar__empty">
-            {tab === "chats" ? "No chats yet — search a wallet address or username to start one." : "No spam."}
-          </p>
-        )}
-        {tab === "alias" && aliasContacts.length === 0 && incomingInvites.length === 0 && (
-          <p className="sidebar__empty">No alias chats yet — start one from a contact's info screen.</p>
-        )}
-        {tab === "alias" && incomingInvites.length > 0 && (
-          <div>
-            <div className="sidebar__group-label">Invitations</div>
-            {incomingInvites.map((inv) => (
-              <div key={inv.inviteRef} className={`sidebar__row ${selectedIncomingInviteRef === inv.inviteRef ? "sidebar__row--selected" : ""}`}>
-                <button className="sidebar__row-main" onClick={() => selectIncomingInvite(inv.inviteRef)}>
-                  <span className="sidebar__avatar sidebar__avatar--dm">A</span>
-                  <span className="sidebar__row-text">
-                    <span className="sidebar__row-name">{inv.peerUsername ?? formatWalletAddress(inv.peerWallet)}</span>
-                  </span>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {tab === "alias" && aliasContacts.length > 0 && (
-          <div>
-            <div className="sidebar__group-label">Established</div>
-            {aliasContacts.map((c) => (
-              <div key={c.contactId} className={`sidebar__row ${selectedAliasContactId === c.contactId ? "sidebar__row--selected" : ""}`}>
-                <button className="sidebar__row-main" onClick={() => selectAliasContact(c.contactId)}>
-                  <span className="sidebar__avatar sidebar__avatar--dm">A</span>
-                  <span className="sidebar__row-text">
-                    <span className="sidebar__row-name">{c.label ?? "Untitled alias chat"}</span>
-                    <span className="sidebar__row-address">{c.contactId.slice(0, 12)}…</span>
-                  </span>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {visibleConversations.map((c) => (
-          <ConversationRow
-            key={c.contactWallet}
-            conversation={c}
-            cachedUsername={usernameByWallet.get(c.contactWallet)}
-            isSelected={selectedWallet === c.contactWallet}
-            onSelect={() => selectContact(c.contactWallet)}
-            onOpenInfo={() => openContactProfile(c.contactWallet)}
-          />
-        ))}
+        <SidebarSection title="Contacts" expanded={contactsExpanded} onToggle={() => setContactsExpanded((v) => !v)}>
+          {chatsConversations.length === 0 && !showStartChat ? (
+            <p className="sidebar__empty">No chats yet — search a wallet address or username to start one.</p>
+          ) : (
+            chatsConversations.map((c) => (
+              <ConversationRow
+                key={c.contactWallet}
+                conversation={c}
+                cachedUsername={usernameByWallet.get(c.contactWallet)}
+                isSelected={selectedWallet === c.contactWallet}
+                onSelect={() => selectContact(c.contactWallet)}
+                onOpenInfo={() => openContactProfile(c.contactWallet)}
+              />
+            ))
+          )}
+        </SidebarSection>
+
+        <SidebarSection title="Alias Chat" expanded={aliasExpanded} onToggle={() => setAliasExpanded((v) => !v)}>
+          {aliasContacts.length === 0 && incomingInvites.length === 0 ? (
+            <p className="sidebar__empty">No alias chats yet — start one from a contact's info screen.</p>
+          ) : (
+            <>
+              {incomingInvites.length > 0 && (
+                <div>
+                  <div className="sidebar__group-label">Invitations</div>
+                  {incomingInvites.map((inv) => (
+                    <div key={inv.inviteRef} className={`sidebar__row ${selectedIncomingInviteRef === inv.inviteRef ? "sidebar__row--selected" : ""}`}>
+                      <button className="sidebar__row-main" onClick={() => selectIncomingInvite(inv.inviteRef)}>
+                        <span className="sidebar__avatar sidebar__avatar--dm">A</span>
+                        <span className="sidebar__row-text">
+                          <span className="sidebar__row-name">{inv.peerUsername ?? formatWalletAddress(inv.peerWallet)}</span>
+                        </span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {aliasContacts.length > 0 && (
+                <div>
+                  <div className="sidebar__group-label">Established</div>
+                  {aliasContacts.map((c) => (
+                    <div key={c.contactId} className={`sidebar__row ${selectedAliasContactId === c.contactId ? "sidebar__row--selected" : ""}`}>
+                      <button className="sidebar__row-main" onClick={() => selectAliasContact(c.contactId)}>
+                        <span className="sidebar__avatar sidebar__avatar--dm">A</span>
+                        <span className="sidebar__row-text">
+                          <span className="sidebar__row-name">{c.label ?? "Untitled alias chat"}</span>
+                          <span className="sidebar__row-address">{c.contactId.slice(0, 12)}…</span>
+                        </span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </SidebarSection>
+
+        <SidebarSection title="Spam" expanded={spamExpanded} onToggle={() => setSpamExpanded((v) => !v)}>
+          {spamConversations.length === 0 ? (
+            <p className="sidebar__empty">No spam.</p>
+          ) : (
+            spamConversations.map((c) => (
+              <ConversationRow
+                key={c.contactWallet}
+                conversation={c}
+                cachedUsername={usernameByWallet.get(c.contactWallet)}
+                isSelected={selectedWallet === c.contactWallet}
+                onSelect={() => selectContact(c.contactWallet)}
+                onOpenInfo={() => openContactProfile(c.contactWallet)}
+              />
+            ))
+          )}
+        </SidebarSection>
       </div>
     </aside>
+  );
+}
+
+/** One independently collapsible section header + body, matching the mockup's "Hide"/"Show" toggle. */
+function SidebarSection({
+  title,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="sidebar__section">
+      <button className="sidebar__section-header" onClick={onToggle}>
+        <span className="sidebar__section-title">{title}</span>
+        <span className="sidebar__section-toggle">
+          {expanded ? "Hide" : "Show"}
+          <svg width="10" height="10" viewBox="0 0 20 20" fill="none" className={`sidebar__section-chevron ${expanded ? "sidebar__section-chevron--up" : ""}`}>
+            <path d="M5 7.5 10 12.5 15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      {expanded && <div className="sidebar__section-body">{children}</div>}
+    </div>
   );
 }
 
@@ -277,9 +332,13 @@ function ConversationRow({
           <span className="sidebar__avatar sidebar__avatar--dm">DM</span>
         )}
         <span className="sidebar__row-text">
-          <span className="sidebar__row-name">{displayName ?? formatWalletAddress(conversation.contactWallet)}</span>
-          <span className="sidebar__row-address">
-            {displayName ? truncateWalletAddress(conversation.contactWallet) : conversation.lastMessagePreview}
+          <span className="sidebar__row-line">
+            <span className="sidebar__row-name">{displayName ?? formatWalletAddress(conversation.contactWallet)}</span>
+            <span className="sidebar__row-time">{formatMessageTimestamp(conversation.lastMessageTimestamp)}</span>
+          </span>
+          <span className="sidebar__row-line">
+            <span className="sidebar__row-preview">{conversation.lastMessagePreview}</span>
+            {conversation.unreadCount > 0 && <span className="sidebar__unread-badge">{conversation.unreadCount}</span>}
           </span>
         </span>
       </button>

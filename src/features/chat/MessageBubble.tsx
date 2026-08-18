@@ -12,7 +12,10 @@ export function MessageBubble({ message }: { message: BubbleMessage }) {
   return (
     <div className={`bubble ${message.isOutgoing ? "bubble--outgoing" : "bubble--incoming"}`}>
       {message.content}
-      <span className="bubble__meta">{formatMessageTimestamp(message.timestamp)}</span>
+      <span className="bubble__meta">
+        {formatMessageTimestamp(message.timestamp)}
+        {message.isOutgoing && " ✓"}
+      </span>
     </div>
   );
 }
