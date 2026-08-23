@@ -21,6 +21,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 pub struct ContactProfile {
     pub wallet_address: String,
     pub username: Option<String>,
+    /// Lazily-resolved on-chain bio, same caching treatment as `username`
+    /// on this struct — see `commands::contacts::resolve_contact_keys_impl`.
+    pub bio: Option<String>,
     pub encryption_pubkey: [u8; 32],
     pub scan_pubkey: [u8; 32],
     pub pq_public_key: Option<Vec<u8>>,
@@ -47,6 +50,7 @@ pub struct ContactKeys {
     pub encryption_pubkey: Option<[u8; 32]>,
     pub scan_pubkey: Option<[u8; 32]>,
     pub username: Option<String>,
+    pub bio: Option<String>,
 }
 
 /// Any subset of keys to persist independently — `None` fields leave the
@@ -61,7 +65,7 @@ pub struct ContactKeysUpdate {
 }
 
 const PROFILE_COLUMNS: &str =
-    "wallet_address, username, encryption_pubkey, scan_pubkey, created_at, pq_public_key, pq_pubkey_hash, is_contact, is_blocked";
+    "wallet_address, username, bio, encryption_pubkey, scan_pubkey, created_at, pq_public_key, pq_pubkey_hash, is_contact, is_blocked";
 
 fn row_to_profile(row: &rusqlite::Row) -> rusqlite::Result<ContactProfile> {
     let encryption_pubkey: Vec<u8> = row.get("encryption_pubkey")?;
@@ -70,6 +74,7 @@ fn row_to_profile(row: &rusqlite::Row) -> rusqlite::Result<ContactProfile> {
     Ok(ContactProfile {
         wallet_address: row.get("wallet_address")?,
         username: row.get("username")?,
+        bio: row.get("bio")?,
         encryption_pubkey: encryption_pubkey.try_into().unwrap_or([0u8; 32]),
         scan_pubkey: scan_pubkey.try_into().unwrap_or([0u8; 32]),
         pq_public_key: row.get("pq_public_key")?,
@@ -99,11 +104,12 @@ pub fn save_contact(conn: &Connection, profile: &ContactProfile) -> rusqlite::Re
 
     conn.execute(
         "INSERT OR REPLACE INTO contacts_cache \
-         (wallet_address, username, encryption_pubkey, scan_pubkey, created_at, pq_public_key, pq_pubkey_hash, is_contact, is_blocked) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         (wallet_address, username, bio, encryption_pubkey, scan_pubkey, created_at, pq_public_key, pq_pubkey_hash, is_contact, is_blocked) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             profile.wallet_address,
             profile.username,
+            profile.bio,
             profile.encryption_pubkey.to_vec(),
             profile.scan_pubkey.to_vec(),
             profile.created_at,
@@ -195,7 +201,7 @@ pub fn set_is_blocked(conn: &Connection, wallet_address: &str, is_blocked: bool)
 pub fn get_contact_keys(conn: &Connection, wallet_address: &str) -> rusqlite::Result<ContactKeys> {
     let row = conn
         .query_row(
-            "SELECT pq_public_key, pq_shared_secret, encryption_pubkey, scan_pubkey, username \
+            "SELECT pq_public_key, pq_shared_secret, encryption_pubkey, scan_pubkey, username, bio \
              FROM contacts_cache WHERE wallet_address = ?1",
             params![wallet_address],
             |row| {
@@ -207,6 +213,7 @@ pub fn get_contact_keys(conn: &Connection, wallet_address: &str) -> rusqlite::Re
                     encryption_pubkey: encryption_pubkey.and_then(|v| v.try_into().ok()),
                     scan_pubkey: scan_pubkey.and_then(|v| v.try_into().ok()),
                     username: row.get(4)?,
+                    bio: row.get(5)?,
                 })
             },
         )
@@ -265,6 +272,7 @@ mod tests {
         ContactProfile {
             wallet_address: wallet.to_string(),
             username: Some("alice".to_string()),
+            bio: Some("hello world".to_string()),
             encryption_pubkey: [1u8; 32],
             scan_pubkey: [2u8; 32],
             pq_public_key: Some(vec![3u8; 800]),
@@ -285,6 +293,7 @@ mod tests {
 
         let fetched = get_contact(conn, "WALLET1").unwrap().unwrap();
         assert_eq!(fetched.username.as_deref(), Some("alice"));
+        assert_eq!(fetched.bio.as_deref(), Some("hello world"));
         assert_eq!(fetched.encryption_pubkey, [1u8; 32]);
         assert_eq!(fetched.pq_public_key.as_deref(), Some([3u8; 800].as_ref()));
 

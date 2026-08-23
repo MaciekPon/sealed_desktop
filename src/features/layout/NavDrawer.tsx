@@ -4,53 +4,8 @@ import { useResolvedUsername } from "../../queries/contacts";
 import { useCredits } from "../../queries/credits";
 import { avatarColor, initials, truncateWalletAddress } from "../../lib/format";
 import { SettingsScreen } from "../settings/SettingsScreen";
+import { IconChats, IconContacts, IconFiles, IconSettings } from "./icons";
 import "./layout.css";
-
-const navIconBase = {
-  width: 18,
-  height: 18,
-  viewBox: "0 0 20 20",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.5,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-};
-
-function IconChats() {
-  return (
-    <svg {...navIconBase}>
-      <path d="M3 4.5h14v9H8l-3.5 3v-3H3Z" />
-    </svg>
-  );
-}
-
-function IconContacts() {
-  return (
-    <svg {...navIconBase}>
-      <circle cx="10" cy="7" r="3" />
-      <path d="M4 17c0-3 2.7-5 6-5s6 2 6 5" />
-    </svg>
-  );
-}
-
-function IconFiles() {
-  return (
-    <svg {...navIconBase}>
-      <path d="M5 3.5h6l4 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" />
-      <path d="M11 3.5v4h4" />
-    </svg>
-  );
-}
-
-function IconSettings() {
-  return (
-    <svg {...navIconBase}>
-      <circle cx="10" cy="10" r="2.6" />
-      <path d="M10 3.5v1.7M10 14.8v1.7M16.5 10h-1.7M5.2 10H3.5M14.6 5.4l-1.2 1.2M6.6 13.4l-1.2 1.2M14.6 14.6l-1.2-1.2M6.6 6.6 5.4 5.4" />
-    </svg>
-  );
-}
 
 /**
  * Hamburger-menu navigation drawer, matching the supplied design mockup —
@@ -62,18 +17,17 @@ function IconSettings() {
  *
  * Only Settings renders *inside* this same panel (`navDrawerMode`) rather
  * than navigating the whole app away — per the mockup, the drawer stays
- * open and its content swaps to Settings. Contacts is a normal full-width
- * `screen` (matches the profile/address-book mockups, which are clearly
- * full-content-area views, not drawer panels) — picking it closes the
- * drawer and switches screens, same as Chats.
+ * open and its content swaps to Settings. Chats/Contacts instead swap
+ * `MainLayout`'s left panel (`chatUiStore`'s `leftPanel`) — picking either
+ * closes the drawer.
  */
 export function NavDrawer() {
   const open = useChatUiStore((s) => s.navDrawerOpen);
   const mode = useChatUiStore((s) => s.navDrawerMode);
   const close = useChatUiStore((s) => s.closeNavDrawer);
   const setMode = useChatUiStore((s) => s.setNavDrawerMode);
-  const screen = useChatUiStore((s) => s.screen);
-  const clearSelection = useChatUiStore((s) => s.clearSelection);
+  const leftPanel = useChatUiStore((s) => s.leftPanel);
+  const storeGoToChats = useChatUiStore((s) => s.goToChats);
   const openContactsList = useChatUiStore((s) => s.openContactsList);
 
   const account = useSessionStore((s) => s.account);
@@ -83,7 +37,7 @@ export function NavDrawer() {
   if (!open) return null;
 
   function goToChats() {
-    clearSelection();
+    storeGoToChats();
     close();
   }
 
@@ -105,6 +59,19 @@ export function NavDrawer() {
   return (
     <div className="nav-drawer-backdrop" onClick={close}>
       <div className="nav-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="nav-drawer__brand">
+          <button className="sidebar__icon-btn" onClick={close} aria-label="Close menu">
+            ☰
+          </button>
+          <svg width="20" height="20" viewBox="0 0 120 120" fill="none" className="sidebar__brand-mark">
+            <path
+              d="M52.3082 0.245538C63.0572 -0.751089 73.8681 1.29913 83.5124 6.16081L83.7403 6.27666L83.7445 6.27868C112.098 20.7642 123.378 55.5972 108.978 84.0669C95.3052 111.099 62.7781 122.538 35.3099 111.277L10.4524 119.68L27.3341 89.7793H9.58543C4.35304 81.8393 1.13578 72.7082 0.247669 63.188L0.246328 63.1779C-2.66838 31.3724 20.6188 3.19537 52.3063 0.245538H52.3082ZM66.0651 57.4533L57.1243 73.6179H36.2749L27.3334 89.7813H71.8143C80.7025 89.7813 87.9077 82.5448 87.9084 73.6179C87.9084 64.6906 80.7032 57.4533 71.8143 57.4533H66.0651ZM43.4272 25.1257C34.5389 25.1258 27.3335 32.3624 27.3334 41.2895C27.3336 50.2163 34.539 57.4531 43.4272 57.4533H48.2305L57.1719 41.2895H78.9673L87.9084 25.1257H43.4272Z"
+              fill="var(--color-primary)"
+            />
+          </svg>
+          <span className="sidebar__brand-name">Sealed</span>
+        </div>
+
         <div className="nav-drawer__profile">
           {username ? (
             <span className="nav-drawer__avatar" style={{ background: avatarColor(account?.walletAddress ?? "") }}>
@@ -120,13 +87,13 @@ export function NavDrawer() {
         </div>
 
         <nav className="nav-drawer__nav">
-          <button className={`nav-drawer__item ${screen === "chat" ? "nav-drawer__item--active" : ""}`} onClick={goToChats}>
+          <button className={`nav-drawer__item ${leftPanel === "chats" ? "nav-drawer__item--active" : ""}`} onClick={goToChats}>
             <span className="nav-drawer__item-icon">
               <IconChats />
             </span>
             Chats
           </button>
-          <button className={`nav-drawer__item ${screen === "contactsList" ? "nav-drawer__item--active" : ""}`} onClick={goToContactsList}>
+          <button className={`nav-drawer__item ${leftPanel === "contacts" ? "nav-drawer__item--active" : ""}`} onClick={goToContactsList}>
             <span className="nav-drawer__item-icon">
               <IconContacts />
             </span>

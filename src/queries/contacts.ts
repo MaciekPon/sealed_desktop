@@ -78,6 +78,25 @@ export function useResolvedUsername(walletAddress: string, enabled: boolean) {
   });
 }
 
+/**
+ * On-chain bio for a wallet — same lazy-resolve/forever-cache treatment as
+ * `useResolvedUsername` above, and deliberately sharing its query key: both
+ * hooks call the exact same `resolve_contact_keys` IPC command, so mounting
+ * both for the same wallet (e.g. `ContactProfile` showing name + bio) costs
+ * one round trip, not two — `select` just picks a different field out of
+ * the same cached `ContactKeys` result. Also used for the signed-in user's
+ * own bio (Settings), same as `useResolvedUsername` already is for their
+ * own username.
+ */
+export function useResolvedBio(walletAddress: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.resolvedUsername(walletAddress),
+    queryFn: () => contacts.resolveKeys(walletAddress),
+    select: (keys) => keys.bio,
+    enabled,
+  });
+}
+
 function useContactFlagMutation(mutationFn: (walletAddress: string) => Promise<void>) {
   const queryClient = useQueryClient();
   return useMutation({

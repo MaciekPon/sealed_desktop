@@ -22,7 +22,7 @@ import "./chat.css";
  * conversation list or the local contact cache matches, it offers to
  * resolve the typed wallet address or username and start a fresh thread.
  *
- * Restyled 2026-08-18 to match a supplied design mockup: Contacts/Alias
+ * Restyled 2026-08-18 to match a supplied design mockup: Chats/Alias
  * Chat/Spam are three independently collapsible sections in one scrollable
  * list (each with its own Hide/Show toggle) instead of the previous
  * mutually-exclusive tab-pill switcher. Contacts/Spam still split the same
@@ -57,7 +57,6 @@ export function ContactsSidebar() {
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
   const selectIncomingInvite = useChatUiStore((s) => s.selectIncomingInvite);
   const selectedIncomingInviteRef = useChatUiStore((s) => s.selectedIncomingInviteRef);
-  const openContactProfile = useChatUiStore((s) => s.openContactProfile);
   const openNavDrawer = useChatUiStore((s) => s.openNavDrawer);
 
   const { data: contacts = [] } = useContacts();
@@ -130,6 +129,7 @@ export function ContactsSidebar() {
       await saveContact.mutateAsync({
         walletAddress,
         username: keys.username,
+        bio: keys.bio,
         encryptionPubkey: keys.encryptionPubkey,
         scanPubkey: keys.scanPubkey,
         pqPublicKey: keys.pqPublicKey,
@@ -189,7 +189,7 @@ export function ContactsSidebar() {
       {newChatError && <p className="sidebar__new-chat-hint">{newChatError}</p>}
 
       <div className="sidebar__list">
-        <SidebarSection title="Contacts" expanded={contactsExpanded} onToggle={() => setContactsExpanded((v) => !v)}>
+        <SidebarSection title="Chats" expanded={contactsExpanded} onToggle={() => setContactsExpanded((v) => !v)}>
           {chatsConversations.length === 0 && !showStartChat ? (
             <p className="sidebar__empty">No chats yet — search a wallet address or username to start one.</p>
           ) : (
@@ -200,7 +200,6 @@ export function ContactsSidebar() {
                 cachedUsername={usernameByWallet.get(c.contactWallet)}
                 isSelected={selectedWallet === c.contactWallet}
                 onSelect={() => selectContact(c.contactWallet)}
-                onOpenInfo={() => openContactProfile(c.contactWallet)}
               />
             ))
           )}
@@ -257,7 +256,6 @@ export function ContactsSidebar() {
                 cachedUsername={usernameByWallet.get(c.contactWallet)}
                 isSelected={selectedWallet === c.contactWallet}
                 onSelect={() => selectContact(c.contactWallet)}
-                onOpenInfo={() => openContactProfile(c.contactWallet)}
               />
             ))
           )}
@@ -309,13 +307,11 @@ function ConversationRow({
   cachedUsername,
   isSelected,
   onSelect,
-  onOpenInfo,
 }: {
   conversation: ConversationPreview;
   cachedUsername: string | undefined;
   isSelected: boolean;
   onSelect: () => void;
-  onOpenInfo: () => void;
 }) {
   const localDisplayName = cachedUsername ?? conversation.contactUsername ?? null;
   const { data: resolvedUsername } = useResolvedUsername(conversation.contactWallet, localDisplayName === null);
@@ -338,12 +334,16 @@ function ConversationRow({
           </span>
           <span className="sidebar__row-line">
             <span className="sidebar__row-preview">{conversation.lastMessagePreview}</span>
-            {conversation.unreadCount > 0 && <span className="sidebar__unread-badge">{conversation.unreadCount}</span>}
+            {/* Masked while this conversation is the open one — the badge
+                otherwise only clears once the `markConversationAsRead`
+                IPC round-trip finishes, which is both wrong (an open chat
+                window means the user has already "read" it) and visibly
+                slow. `isSelected` flips synchronously the instant the row
+                is clicked, so this hides instantly rather than waiting on
+                the network. */}
+            {!isSelected && conversation.unreadCount > 0 && <span className="sidebar__unread-badge">{conversation.unreadCount}</span>}
           </span>
         </span>
-      </button>
-      <button className="sidebar__row-info-btn" onClick={onOpenInfo} aria-label="Contact info">
-        ⓘ
       </button>
     </div>
   );

@@ -2,6 +2,7 @@
 use tauri::Manager;
 
 mod alias;
+mod bio;
 mod chain;
 mod commands;
 mod constants;
@@ -64,6 +65,7 @@ pub fn run() {
             commands::username::resolve_username,
             commands::username::check_username_available,
             commands::username::search_usernames,
+            commands::bio::set_bio,
             commands::credits::get_credits,
             commands::credits::estimate_credit_cost,
             commands::credits::redeem_code,

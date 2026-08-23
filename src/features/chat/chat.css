@@ -156,6 +156,10 @@
   color: var(--color-text);
 }
 
+.sidebar__row + .sidebar__row {
+  margin-top: 4px;
+}
+
 .sidebar__row:hover {
   background: var(--color-card-alt);
 }
@@ -176,22 +180,6 @@
   color: var(--color-text);
   flex: 1;
   min-width: 0;
-}
-
-.sidebar__row-info-btn {
-  flex-shrink: 0;
-  background: transparent;
-  border: none;
-  color: var(--color-text-tertiary);
-  font-size: 14px;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-sm);
-}
-
-.sidebar__row-info-btn:hover {
-  background: var(--color-card-alt);
-  color: var(--color-text);
 }
 
 .sidebar__avatar {
@@ -323,6 +311,21 @@
   margin: 0;
 }
 
+/* Opens the contact's profile — the sidebar's old per-row "ⓘ" button was
+   removed in favor of this (2026-08-23). */
+button.chat-window__header-name--clickable {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+}
+
+button.chat-window__header-name--clickable:hover {
+  text-decoration: underline;
+}
+
 .chat-window__header-address {
   font-size: 11px;
   color: var(--color-text-tertiary);
@@ -355,8 +358,13 @@
   max-width: 60%;
   padding: 10px 14px;
   border-radius: var(--radius-md);
-  font-size: 13.5px;
-  line-height: 1.4;
+  font-size: 14px;
+  /* -0.5% in the design file, expressed relative to font-size (em) so it
+     scales correctly if font-size ever changes. */
+  letter-spacing: -0.005em;
+  /* 106.4% in the design file — CSS's unitless line-height is already a
+     multiplier of font-size, so this is just 1.064. */
+  line-height: 1.064;
   word-break: break-word;
 }
 

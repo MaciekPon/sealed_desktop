@@ -14,6 +14,8 @@
 //! [`SealedChainClient::send_message`] takes `sender_ephemeral_pubkey`
 //! explicitly and embeds it correctly.
 
+use std::time::{Duration, Instant};
+
 use base64::Engine;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -43,6 +45,8 @@ pub enum ChainError {
     BadUsernameFormat { code: &'static str, message: &'static str },
     #[error("Invalid redeem code.")]
     BadRedeemCode,
+    #[error("Bio must be at most 160 bytes.")]
+    BioTooLong,
     #[error("Insufficient balance for MBR.")]
     MbrShortfall,
     #[error("User not found")]
@@ -71,6 +75,9 @@ pub struct CreditCost {
 pub struct UserProfile {
     pub wallet_address: String,
     pub username: Option<String>,
+    /// Public on-chain bio, <=160 UTF-8 bytes. `None` when unset (v2 box,
+    /// or a v3 box that never had one written).
+    pub bio: Option<String>,
     pub encryption_pubkey: [u8; 32],
     pub scan_pubkey: [u8; 32],
     // Decoded from chain alongside `pq_pubkey_hash` for completeness, but
@@ -228,6 +235,47 @@ impl SealedChainClient {
         let selector = abi_selector("releaseUsername()void");
         let app_call_txn =
             build_app_call_txn_with_boxes(&sender_pubkey, self.sealed_app_id, selector, vec![], boxes, 0, &params);
+
+        self.sign_and_submit_group(escrow_txn, app_call_txn, wallet, escrow).await
+    }
+
+    /// Set or clear (empty string) the caller's public profile bio.
+    ///
+    /// `setBio(byte[])void` — UserState v3. Free-form UTF-8 capped at
+    /// [`crate::bio::MAX_BYTES`] bytes; empty clears the field. Spends 1
+    /// credit like `claim_username`. Bio is public on-chain plaintext, same
+    /// exposure as username.
+    ///
+    /// Box refs: `w:<sender>` only — no reverse-index box, unlike usernames.
+    pub async fn set_bio(&self, wallet: &AlgorandWallet, escrow: &TreasuryEscrowSigner, bio: &str) -> Result<String, ChainError> {
+        let bio_bytes = bio.as_bytes();
+        if bio_bytes.len() > crate::bio::MAX_BYTES {
+            return Err(ChainError::BioTooLong);
+        }
+
+        let credits = self.get_credits(wallet, &wallet.address).await?;
+        if credits < 1 {
+            return Err(ChainError::NoCredits);
+        }
+
+        let sender_pubkey = wallet.public_key_bytes();
+        let boxes = vec![(0u64, wallet_box_key(&sender_pubkey))];
+
+        let params = self.get_suggested_params().await?;
+        // `setBio` calls `ensureBudget(2400, OpUpFeeSource.GroupCredit)` —
+        // same fee pool as `claim_username`: 1 escrow leg + 1 app-call leg +
+        // 3 opup inner-txns.
+        let escrow_txn = build_escrow_self_pay_txn(&escrow.address_pubkey, params.min_fee * 5, &params);
+        let selector = abi_selector("setBio(byte[])void");
+        let app_call_txn = build_app_call_txn_with_boxes(
+            &sender_pubkey,
+            self.sealed_app_id,
+            selector,
+            vec![encode_abi_dynamic_bytes(bio_bytes)],
+            boxes,
+            0,
+            &params,
+        );
 
         self.sign_and_submit_group(escrow_txn, app_call_txn, wallet, escrow).await
     }
@@ -391,6 +439,11 @@ impl SealedChainClient {
                 None
             } else {
                 Some(String::from_utf8_lossy(&state.username).into_owned())
+            },
+            bio: if state.bio.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8_lossy(&state.bio).into_owned())
             },
             encryption_pubkey: state.encryption_pubkey,
             scan_pubkey: state.scan_pubkey,
@@ -712,6 +765,47 @@ impl SealedChainClient {
         Ok(())
     }
 
+    /// Poll algod for confirmation of `tx_id`, ported from
+    /// `SealedChainClient.waitForConfirmation` in `sealed_chain_client.dart`.
+    ///
+    /// Callers that read their own just-submitted write back from chain
+    /// immediately (e.g. `commands::bio::set_bio`, `commands::username::claim_username`
+    /// re-resolving via `resolve_contact_keys`) must await this first —
+    /// without it, the read races the transaction's actual confirmation and
+    /// can observe the pre-write state, which then gets stuck in the
+    /// frontend's `staleTime: Infinity` cache until something else
+    /// invalidates it (found live 2026-08-23: an edited bio kept showing
+    /// its old value on desktop after saving, while the same edit was
+    /// visible immediately on mobile, which already awaits confirmation at
+    /// the `UserService` layer for both `setUsername`/`setBio`).
+    pub async fn wait_for_confirmation(&self, tx_id: &str) -> Result<u64, ChainError> {
+        const TIMEOUT: Duration = Duration::from_secs(60);
+        const POLL_INTERVAL: Duration = Duration::from_millis(1500);
+
+        let deadline = Instant::now() + TIMEOUT;
+        let url = Url::parse(&format!("{}/v2/transactions/pending/{tx_id}", self.algod_url))
+            .map_err(|e| ChainError::UnexpectedResponse(e.to_string()))?;
+        loop {
+            let resp = self.ohttp.get(&url, &[]).await?;
+            if resp.is_success() {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&resp.body).map_err(|e| ChainError::UnexpectedResponse(e.to_string()))?;
+                let pool_error = value.get("pool-error").and_then(|v| v.as_str()).unwrap_or("");
+                if !pool_error.is_empty() {
+                    return Err(ChainError::Generic(format!("pool-error: {pool_error}")));
+                }
+                let confirmed_round = value.get("confirmed-round").and_then(|v| v.as_u64()).unwrap_or(0);
+                if confirmed_round > 0 {
+                    return Ok(confirmed_round);
+                }
+            }
+            if Instant::now() >= deadline {
+                return Err(ChainError::Generic(format!("confirmation timeout for transaction {tx_id}")));
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+    }
+
     /// Simulate an unsigned app-call, return the ABI return payload (bytes
     /// after the 4-byte `0x151f7c75` return prefix), or `None` if absent.
     ///
@@ -807,6 +901,9 @@ impl SealedChainClient {
         if body.contains("BAD_LEN") {
             return ChainError::BadUsernameFormat { code: "BAD_LEN", message: "Username length out of range." };
         }
+        if body.contains("BIO_TOO_LONG") {
+            return ChainError::BioTooLong;
+        }
         ChainError::Generic(body.to_string())
     }
 }
@@ -877,12 +974,14 @@ mod tests {
             ChainError::BadUsernameFormat { code: "BAD_CHAR", .. }
         ));
         assert!(matches!(client.classify_contract_error_body("something else"), ChainError::Generic(_)));
+        assert!(matches!(client.classify_contract_error_body("BIO_TOO_LONG"), ChainError::BioTooLong));
     }
 
     fn sample_profile(encryption_pubkey: [u8; 32], scan_pubkey: [u8; 32], pq_pubkey_hash: Option<[u8; 32]>) -> UserProfile {
         UserProfile {
             wallet_address: "WALLET1".to_string(),
             username: None,
+            bio: None,
             encryption_pubkey,
             scan_pubkey,
             pq_public_key: None,

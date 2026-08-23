@@ -5,6 +5,7 @@
 
 pub mod alias;
 pub mod auth;
+pub mod bio;
 pub mod contacts;
 pub mod credits;
 pub mod keys;

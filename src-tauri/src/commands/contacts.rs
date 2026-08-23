@@ -18,6 +18,7 @@ use crate::state::AppState;
 pub struct ContactProfileDto {
     pub wallet_address: String,
     pub username: Option<String>,
+    pub bio: Option<String>,
     pub encryption_pubkey: String, // base64
     pub scan_pubkey: String,       // base64
     pub pq_public_key: Option<String>, // base64
@@ -38,6 +39,7 @@ pub struct ContactKeysDto {
     pub encryption_pubkey: Option<String>, // base64
     pub scan_pubkey: Option<String>,      // base64
     pub username: Option<String>,
+    pub bio: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -67,6 +69,7 @@ fn profile_to_dto(p: &ContactProfile) -> ContactProfileDto {
     ContactProfileDto {
         wallet_address: p.wallet_address.clone(),
         username: p.username.clone(),
+        bio: p.bio.clone(),
         encryption_pubkey: b64_encode(&p.encryption_pubkey),
         scan_pubkey: b64_encode(&p.scan_pubkey),
         pq_public_key: p.pq_public_key.as_deref().map(b64_encode),
@@ -81,6 +84,7 @@ fn dto_to_profile(dto: &ContactProfileDto) -> Result<ContactProfile, String> {
     Ok(ContactProfile {
         wallet_address: dto.wallet_address.clone(),
         username: dto.username.clone(),
+        bio: dto.bio.clone(),
         encryption_pubkey: b64_decode_32(&dto.encryption_pubkey)?,
         scan_pubkey: b64_decode_32(&dto.scan_pubkey)?,
         pq_public_key: dto.pq_public_key.as_deref().map(b64_decode).transpose()?,
@@ -100,6 +104,7 @@ fn keys_to_dto(k: &ContactKeys) -> ContactKeysDto {
         encryption_pubkey: k.encryption_pubkey.map(|k| b64_encode(&k)),
         scan_pubkey: k.scan_pubkey.map(|k| b64_encode(&k)),
         username: k.username.clone(),
+        bio: k.bio.clone(),
     }
 }
 
@@ -225,6 +230,7 @@ pub(crate) async fn add_to_contacts_impl(state: &AppState, wallet_address: &str)
         Some(ContactProfile {
             wallet_address: wallet_address.to_string(),
             username: resolved.username,
+            bio: resolved.bio,
             encryption_pubkey: resolved.encryption_pubkey,
             scan_pubkey: resolved.scan_pubkey,
             pq_public_key: resolved.pq_public_key,
@@ -310,6 +316,9 @@ struct ResolvedKeys {
     /// username by definition) as well as for a registered wallet that
     /// simply hasn't claimed one.
     username: Option<String>,
+    /// Same `None` cases as `username` above, plus a registered wallet that
+    /// has never set a bio.
+    bio: Option<String>,
 }
 
 /// `pub(crate)`, not private: `messaging.rs`'s `send_message` needs the
@@ -323,7 +332,12 @@ pub(crate) async fn resolve_contact_keys_impl(
     cached: ContactKeys,
 ) -> Result<ContactKeys, String> {
     let has_classical_cached = cached.encryption_pubkey.is_some() && cached.scan_pubkey.is_some();
-    if cached.pq_public_key.is_some() && has_classical_cached && cached.username.is_some() {
+    // `cached.bio` gates the skip the same way `cached.username` does: a
+    // contact who simply has no bio set on-chain keeps `bio` at `None`
+    // forever, so this re-resolves every call for them (harmless, matches
+    // username's existing behavior) rather than permanently caching "no
+    // bio" the first time nothing came back.
+    if cached.pq_public_key.is_some() && has_classical_cached && cached.username.is_some() && cached.bio.is_some() {
         return Ok(cached);
     }
 
@@ -337,6 +351,7 @@ pub(crate) async fn resolve_contact_keys_impl(
         encryption_pubkey: cached.encryption_pubkey.or(Some(resolved.encryption_pubkey)),
         scan_pubkey: cached.scan_pubkey.or(Some(resolved.scan_pubkey)),
         username: cached.username.or(resolved.username),
+        bio: cached.bio.or(resolved.bio),
     })
 }
 
@@ -362,6 +377,7 @@ async fn resolve_profile(
             scan_pubkey: profile.scan_pubkey,
             pq_public_key,
             username: profile.username,
+            bio: profile.bio,
         });
     }
 
@@ -385,7 +401,7 @@ async fn fetch_and_verify_pq_pubkey(
 fn derive_profile_from_wallet(wallet_address: &str) -> Option<ResolvedKeys> {
     let pubkey = crate::chain::address::decode_address(wallet_address)?;
     let derived = crate::crypto::x25519::ed25519_public_key_to_x25519(&pubkey)?;
-    Some(ResolvedKeys { encryption_pubkey: derived, scan_pubkey: derived, pq_public_key: None, username: None })
+    Some(ResolvedKeys { encryption_pubkey: derived, scan_pubkey: derived, pq_public_key: None, username: None, bio: None })
 }
 
 #[cfg(test)]
@@ -397,6 +413,7 @@ mod tests {
         let profile = ContactProfile {
             wallet_address: "WALLET1".to_string(),
             username: Some("alice".to_string()),
+            bio: Some("hi there".to_string()),
             encryption_pubkey: [1u8; 32],
             scan_pubkey: [2u8; 32],
             pq_public_key: Some(vec![3u8; 800]),
@@ -408,6 +425,7 @@ mod tests {
         let dto = profile_to_dto(&profile);
         let round_tripped = dto_to_profile(&dto).unwrap();
         assert_eq!(round_tripped.wallet_address, profile.wallet_address);
+        assert_eq!(round_tripped.bio, profile.bio);
         assert_eq!(round_tripped.encryption_pubkey, profile.encryption_pubkey);
         assert_eq!(round_tripped.pq_public_key, profile.pq_public_key);
         assert_eq!(round_tripped.pq_pubkey_hash, profile.pq_pubkey_hash);

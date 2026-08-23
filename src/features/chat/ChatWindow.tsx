@@ -13,7 +13,7 @@ import {
   useSendAliasMessage,
 } from "../../queries/alias";
 import { useChatUiStore } from "../../stores/chatUiStore";
-import { formatWalletAddress, truncateWalletAddress } from "../../lib/format";
+import { formatWalletAddress } from "../../lib/format";
 import { MessageBubble } from "./MessageBubble";
 import "./chat.css";
 
@@ -23,6 +23,8 @@ export function ChatWindow() {
   const selectedIncomingInviteRef = useChatUiStore((s) => s.selectedIncomingInviteRef);
   const clearSelection = useChatUiStore((s) => s.clearSelection);
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
+  const openContactProfile = useChatUiStore((s) => s.openContactProfile);
+  const leftPanel = useChatUiStore((s) => s.leftPanel);
 
   const { data: contacts = [] } = useContacts();
   const contact = contacts.find((c) => c.walletAddress === selectedWallet) ?? null;
@@ -125,7 +127,7 @@ export function ChatWindow() {
     return (
       <div className="chat-window">
         <div className="chat-window__empty">
-          <p>Select a contact to start chatting.</p>
+          <p>{leftPanel === "contacts" ? "Select a contact to view their profile." : "Select a contact to start chatting."}</p>
         </div>
       </div>
     );
@@ -145,8 +147,16 @@ export function ChatWindow() {
     <div className="chat-window">
       <div className="chat-window__header">
         <div>
-          <p className="chat-window__header-name">{headerName}</p>
-          {!isAlias && !isIncoming && (contact?.username ?? resolvedUsername) && <p className="chat-window__header-address">{truncateWalletAddress(selectedWallet as string)}</p>}
+          {!isAlias && !isIncoming ? (
+            <button
+              className="chat-window__header-name chat-window__header-name--clickable"
+              onClick={() => openContactProfile(selectedWallet as string)}
+            >
+              {headerName}
+            </button>
+          ) : (
+            <p className="chat-window__header-name">{headerName}</p>
+          )}
           {isAlias && <p className="chat-window__header-address">Alias contact — no wallet identity shared</p>}
         </div>
         {isAlias && !renaming && (

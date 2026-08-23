@@ -6,6 +6,7 @@ import {
   useBlockContact,
   useDeleteContact,
   useRemoveFromContacts,
+  useResolvedBio,
   useResolvedUsername,
   useUnblockContact,
 } from "../../queries/contacts";
@@ -16,12 +17,13 @@ import {
   useIncomingInvites,
   usePendingInvites,
 } from "../../queries/alias";
-import { avatarColor, formatWalletAddress, initials } from "../../lib/format";
+import { avatarColor, formatWalletAddress, formatWalletAddressGrouped, initials } from "../../lib/format";
 import { QrCode } from "../alias/QrCode";
 import { IconLock } from "../settings/icons";
 import {
   IconCheck,
-  IconChatBubble,
+  IconCopy,
+  IconCreateAliasChat,
   IconLockOpen,
   IconPhone,
   IconUserCheck,
@@ -33,10 +35,23 @@ import "./contactProfile.css";
 /**
  * Reached from a contact row's info button in `ContactsSidebar`, restyled
  * 2026-08-18 to match a supplied design mockup — avatar/QR/bio/action-row
- * layout. "Bio" has no backend (no such field exists anywhere) so it's
- * rendered as a disabled placeholder, same treatment as Settings' rows for
- * features that don't exist yet. Calling (the phone icon) is likewise
- * disabled — there is no voice-call feature in this app at all.
+ * layout. Body restyled again 2026-08-23 to match a second (dark-theme)
+ * mockup: the address row now shows the full address grouped into 4-char
+ * chunks (`formatWalletAddressGrouped`) with an inline copy icon that swaps
+ * to a checkmark once clicked, instead of a boxed copy button; each action
+ * row (Add/Remove/Block/Unblock/Create Alias Chat) is now its own tinted
+ * full-width card instead of a plain row with a divider line below it. The
+ * "Wallet address"/"Bio"/"Contact" section labels and bio's card
+ * background are unchanged from the first pass — an earlier attempt
+ * removed them based on a mis-exported white-background screenshot where
+ * those dark, semi-transparent elements had rendered invisible. The header
+ * (back button, name, action icons) is unchanged — the mockup only covered
+ * the body. "Bio" reads this contact's public on-chain bio via the same
+ * lazy chain-resolve path as their username — `contact.bio` (already
+ * cached in `contacts_cache`) first, falling back to a live resolve via
+ * `useResolvedBio` for a contact never fully resolved before. Calling (the
+ * phone icon) is still disabled — there is no voice-call feature in this
+ * app at all.
  */
 export function ContactProfile() {
   const walletAddress = useChatUiStore((s) => s.viewingContactWallet);
@@ -52,6 +67,13 @@ export function ContactProfile() {
   const { data: resolvedUsername } = useResolvedUsername(
     walletAddress ?? "",
     walletAddress !== null && !contact?.username,
+  );
+  // Same reasoning as `resolvedUsername` above, plus this contact's public
+  // on-chain bio — `useResolvedBio` shares `useResolvedUsername`'s query
+  // key/network call, so this doesn't cost a second round trip.
+  const { data: resolvedBio } = useResolvedBio(
+    walletAddress ?? "",
+    walletAddress !== null && !contact?.bio,
   );
   const addToContacts = useAddToContacts();
   const removeFromContacts = useRemoveFromContacts();
@@ -162,7 +184,7 @@ export function ContactProfile() {
               onClick={openChat}
               aria-label="Open chat"
             >
-              <IconChatBubble />
+              <IconCreateAliasChat />
             </button>
             <button
               className="contact-profile__icon-btn"
@@ -177,7 +199,7 @@ export function ContactProfile() {
               disabled={!!myPendingAliasInvite || aliasBusy}
               onClick={handleAliasAction}
             >
-              <IconChatBubble /> Alias Chat
+              <IconCreateAliasChat /> Alias Chat
             </button>
           </div>
         </div>
@@ -211,34 +233,42 @@ export function ContactProfile() {
 
         <div className="contact-profile__section">
           <div className="contact-profile__section-label">Wallet address</div>
-          <div className="contact-profile__qr-card">
-            <QrCode value={walletAddress} size={160} />
-          </div>
-          <div className="contact-profile__address-row">
-            <span className="contact-profile__address-text">
-              {walletAddress}
-            </span>
-            <button
-              className="contact-profile__copy-btn"
-              onClick={handleCopyAddress}
-              aria-label="Copy address"
-              title={addressCopied ? "Copied!" : "Copy"}
-            >
-              <IconCheck />
-            </button>
+          <div className="contact-profile__wallet-card">
+            <div className="contact-profile__qr-frame">
+              <QrCode value={walletAddress} size={160} />
+            </div>
+            <div className="contact-profile__address-input">
+              <span className="contact-profile__address-text">
+                {formatWalletAddressGrouped(walletAddress)}
+              </span>
+              <button
+                className="contact-profile__address-copy-btn"
+                onClick={handleCopyAddress}
+                aria-label="Copy address"
+                title={addressCopied ? "Copied!" : "Copy"}
+              >
+                {addressCopied ? <IconCheck /> : <IconCopy />}
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="contact-profile__section">
           <div className="contact-profile__section-label">Bio</div>
-          <p className="contact-profile__bio contact-profile__bio--disabled">
-            Not available yet.
-          </p>
+          {(() => {
+            const bio = contact?.bio ?? resolvedBio ?? null;
+            return bio ? (
+              <p className="contact-profile__bio">{bio}</p>
+            ) : (
+              <p className="contact-profile__bio contact-profile__bio--disabled">
+                No bio yet.
+              </p>
+            );
+          })()}
         </div>
 
         <div className="contact-profile__section">
           <div className="contact-profile__section-label">Contact</div>
-
           {contact?.isContact ? (
             <ProfileActionRow
               icon={<IconUserMinus />}
@@ -280,7 +310,7 @@ export function ContactProfile() {
           )}
 
           <ProfileActionRow
-            icon={<IconChatBubble />}
+            icon={<IconCreateAliasChat />}
             label="Create Alias Chat"
             tone="accent"
             buttonLabel={aliasLabel}

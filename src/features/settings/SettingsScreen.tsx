@@ -4,11 +4,16 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useCredits, useRedeemCode } from "../../queries/credits";
 import { useWalletBalance } from "../../queries/wallet";
-import { useResolvedUsername } from "../../queries/contacts";
+import { useResolvedBio, useResolvedUsername } from "../../queries/contacts";
 import { useClaimUsername, useReleaseUsername } from "../../queries/username";
+import { useSetBio } from "../../queries/bio";
+
+/** Mirrors `bio::MAX_BYTES` in `src-tauri/src/bio.rs` — keep in sync. */
+const BIO_MAX_BYTES = 160;
 import { useForceResync, useSyncMessages } from "../../queries/messaging";
 import { useDisableTerminationCode, useIsTerminationConfigured, useSetTerminationCode } from "../../queries/settings";
 import { settings as settingsApi, keys as keysApi } from "../../lib/tauri";
+import { openExternalUrl } from "../../lib/openExternal";
 import { PinPad } from "../auth/PinPad";
 import { QrCode } from "../alias/QrCode";
 import { formatAlgoBalance, truncateWalletAddress } from "../../lib/format";
@@ -16,9 +21,7 @@ import {
   IconAt,
   IconAtom,
   IconBell,
-  IconChevronRight,
   IconFilter,
-  IconInfo,
   IconKey,
   IconLock,
   IconPencil,
@@ -35,6 +38,7 @@ import "./settings.css";
 type View =
   | "main"
   | "username"
+  | "bio"
   | "redeemCode"
   | "walletReveal"
   | "changePin_old"
@@ -55,10 +59,16 @@ type View =
  *
  * Main-view layout restyled 2026-08-18 to match a supplied design mockup —
  * see the plan/memory entry for the source screenshots. Rows that need
- * backend work the app doesn't have yet (Bio, Top up Wallet, Push
- * notification, Auto-Delete Local Files, Falcon/post-quantum transactions,
- * Spam filter) are rendered per the mockup but disabled/non-interactive,
- * per an explicit product decision rather than silently guessed at. Real,
+ * backend work the app doesn't have yet (Push notification, Auto-Delete
+ * Local Files, Falcon/post-quantum transactions, Spam filter) are rendered
+ * per the mockup but disabled/non-interactive, per an explicit product
+ * decision rather than silently guessed at. Two exceptions: "Top up Wallet"
+ * (2026-08-20) opens https://sealed.channel/top-up in the system browser
+ * instead of a built-in payment flow, and "Bio Description" (2026-08-23) is
+ * a real `setBio(byte[])void` on-chain write — see `chain/client.rs`'s
+ * `set_bio`, mirroring `UserService.setBio` in `user_service.dart` — reached
+ * through the same lazy chain-resolve path as username
+ * (`useResolvedBio`/`useResolvedUsername` share one query key). Real,
  * already-working features that don't appear in the mockup at all
  * (auto-sync toggle, "Sync now", "Republish keys") are kept in an
  * "Advanced" section below the mockup's sections rather than deleted.
@@ -86,9 +96,11 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const { data: credits } = useCredits();
   const { data: balanceMicroAlgos } = useWalletBalance();
   const { data: myUsername } = useResolvedUsername(account?.walletAddress ?? "", !!account);
+  const { data: myBio } = useResolvedBio(account?.walletAddress ?? "", !!account);
   const redeemCode = useRedeemCode();
   const claimUsername = useClaimUsername();
   const releaseUsername = useReleaseUsername();
+  const setBio = useSetBio();
   const { data: terminationConfigured } = useIsTerminationConfigured();
   const setTerminationCode = useSetTerminationCode();
   const disableTerminationCode = useDisableTerminationCode();
@@ -113,6 +125,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const [redeemCodeInput, setRedeemCodeInput] = useState("");
   const [redeemUsernameInput, setRedeemUsernameInput] = useState("");
   const [claimInput, setClaimInput] = useState("");
+  const [bioInput, setBioInput] = useState("");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
@@ -297,6 +310,19 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function handleSetBio(text: string) {
+    setError(null);
+    setNotice(null);
+    const trimmed = text.trim();
+    try {
+      await setBio.mutateAsync(trimmed);
+      setNotice(trimmed ? "Bio updated." : "Bio cleared.");
+      backToMain();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function handleForceResync() {
     setError(null);
     setNotice(null);
@@ -475,6 +501,48 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     );
   }
 
+  if (view === "bio") {
+    const byteLength = new TextEncoder().encode(bioInput).length;
+    const overLimit = byteLength > BIO_MAX_BYTES;
+    return (
+      <div className="settings-screen">
+        <div className="settings-screen__header">
+          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
+            ←
+          </button>
+          <h2 className="settings-screen__title">Bio Description</h2>
+        </div>
+        <div className="settings-screen__body">
+          {notice && <p className="settings-screen__notice">{notice}</p>}
+          {error && <p className="pin-pad__error">{error}</p>}
+          <p className="settings-screen__hint">Your bio is public, on-chain, and visible to anyone who opens your profile.</p>
+          <textarea
+            className="settings-input settings-input--full"
+            placeholder="Tell people a bit about yourself…"
+            rows={4}
+            value={bioInput}
+            onChange={(e) => setBioInput(e.target.value)}
+          />
+          <p className={`settings-screen__hint ${overLimit ? "pin-pad__error" : ""}`} style={{ margin: 0, textAlign: "right" }}>
+            {byteLength}/{BIO_MAX_BYTES}
+          </p>
+          <button
+            className="btn btn--secondary settings-btn-full"
+            disabled={overLimit || setBio.isPending}
+            onClick={() => handleSetBio(bioInput)}
+          >
+            {setBio.isPending ? "Saving…" : "Save"}
+          </button>
+          {!!myBio && (
+            <button className="btn btn--text settings-btn-full" disabled={setBio.isPending} onClick={() => handleSetBio("")}>
+              Clear bio
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (view === "redeemCode") {
     return (
       <div className="settings-screen">
@@ -554,10 +622,17 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             icon={<IconAt />}
             label="Username"
             sublabel={myUsername ? `@${myUsername}` : "Not claimed"}
-            right={<IconChevronRight />}
             onClick={() => setView("username")}
           />
-          <SettingsListRow icon={<IconPencil />} label="Bio Description" sublabel="Not available yet" disabled />
+          <SettingsListRow
+            icon={<IconPencil />}
+            label="Bio Description"
+            sublabel={myBio ?? "Not set"}
+            onClick={() => {
+              setBioInput(myBio ?? "");
+              setView("bio");
+            }}
+          />
           <SettingsListRow
             icon={<IconWallet />}
             label="Wallet"
@@ -568,20 +643,30 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         </SettingsSection>
 
         <SettingsSection title="App Credits">
-          <SettingsListRow
-            icon={<IconInfo />}
-            label="Sealed Credits"
-            sublabel={`enough to send ${credits ?? 0} Messages`}
-            right={<span className="settings-list-row__pill">{credits ?? "—"}</span>}
-          />
+          <div className="settings-credits-row">
+            <div className="settings-list-row__text">
+              <span className="settings-list-row__label">
+                Sealed Credits <span className="settings-credits-row__info" title="1 credit = 1 message">ⓘ</span>
+              </span>
+              <span className="settings-list-row__sublabel">
+                enough to send <strong>{credits ?? 0}</strong> Messages
+              </span>
+            </div>
+            <span className="settings-credits-row__pill">{credits ?? "—"}</span>
+          </div>
           <SettingsListRow
             icon={<IconStar />}
             label="Redeem code"
             sublabel="Enter the code and claim your credits"
-            right={<IconChevronRight />}
             onClick={() => setView("redeemCode")}
           />
-          <SettingsListRow icon={<IconPlus />} label="Top up Wallet" sublabel="Add credits to your account" disabled />
+          <SettingsListRow
+            icon={<IconPlus />}
+            label="Top up Wallet"
+            sublabel="Add credits to your account"
+            accent
+            onClick={() => openExternalUrl("https://sealed.channel/top-up")}
+          />
         </SettingsSection>
 
         <SettingsSection title="Notification">
@@ -589,12 +674,11 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         </SettingsSection>
 
         <SettingsSection title="Passwords">
-          <SettingsListRow icon={<IconLock />} label="Change pass code" right={<IconChevronRight />} onClick={() => setView("changePin_old")} />
+          <SettingsListRow icon={<IconLock />} label="Change pass code" onClick={() => setView("changePin_old")} />
           <SettingsListRow
             icon={<IconShieldOff />}
             label="Change termination code"
             sublabel={terminationConfigured ? "Currently set" : "Not set"}
-            right={<IconChevronRight />}
             onClick={terminationConfigured ? startDisableTermination : startSetTermination}
           />
         </SettingsSection>
@@ -633,7 +717,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             right={<span className="settings-list-row__status">{republishKeys.isPending ? "Publishing…" : ""}</span>}
             onClick={handleRepublishKeys}
           />
-          <SettingsListRow icon={<IconKey />} label="View recovery phrase" right={<IconChevronRight />} onClick={() => setView("seed_verify")} />
+          <SettingsListRow icon={<IconKey />} label="View recovery phrase" onClick={() => setView("seed_verify")} />
         </SettingsSection>
 
         <section className="settings-section settings-section--danger">
@@ -673,6 +757,7 @@ function SettingsListRow({
   onClick,
   disabled,
   danger,
+  accent,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -681,12 +766,14 @@ function SettingsListRow({
   onClick?: () => void;
   disabled?: boolean;
   danger?: boolean;
+  /** Highlighted/branded row — mint background tint + primary-colored label. Currently only "Top up Wallet". */
+  accent?: boolean;
 }) {
   const clickable = !!onClick && !disabled;
   const Tag = clickable ? "button" : "div";
   return (
     <Tag
-      className={`settings-list-row ${disabled ? "settings-list-row--disabled" : ""} ${danger ? "settings-list-row--danger" : ""}`}
+      className={`settings-list-row ${disabled ? "settings-list-row--disabled" : ""} ${danger ? "settings-list-row--danger" : ""} ${accent ? "settings-list-row--accent" : ""}`}
       onClick={clickable ? onClick : undefined}
     >
       <span className={`settings-list-row__icon ${danger ? "settings-list-row__icon--danger" : ""}`}>{icon}</span>

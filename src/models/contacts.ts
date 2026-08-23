@@ -3,6 +3,8 @@
 export interface ContactProfile {
   walletAddress: string;
   username: string | null;
+  /** Public on-chain bio, <=160 UTF-8 bytes. Lazily resolved, same caching treatment as `username` on this shape. */
+  bio: string | null;
   /** base64 */
   encryptionPubkey: string;
   /** base64 */
@@ -30,6 +32,7 @@ export interface ContactKeys {
   /** base64 */
   scanPubkey: string | null;
   username: string | null;
+  bio: string | null;
 }
 
 /** Any subset of keys to persist — omitted/undefined fields leave the existing stored value untouched. */

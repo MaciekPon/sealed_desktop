@@ -55,6 +55,11 @@ export const username = {
   search: (query: string, limit: number) => invoke<UsernameSearchHit[]>("search_usernames", { query, limit }),
 };
 
+export const bio = {
+  /** Set or clear (empty string) the caller's public on-chain bio. Returns the app-call TxID. */
+  set: (bio: string) => invoke<string>("set_bio", { bio }),
+};
+
 export const credits = {
   get: () => invoke<number>("get_credits"),
   estimateCost: () => invoke<CreditCostInfo>("estimate_credit_cost"),

@@ -39,7 +39,7 @@ pub enum DbError {
 
 pub type DbResult<T> = Result<T, DbError>;
 
-const CURRENT_SCHEMA_VERSION: i64 = 4;
+const CURRENT_SCHEMA_VERSION: i64 = 5;
 
 /// A decrypted-in-memory handle onto the local database. Callers are
 /// expected to hold this behind a mutex (wired up in the Tauri command
@@ -109,6 +109,9 @@ fn apply_migrations(conn: &Connection) -> DbResult<()> {
     }
     if version < 4 {
         create_schema_v4(conn)?;
+    }
+    if version < 5 {
+        create_schema_v5(conn)?;
     }
     conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)?;
     Ok(())
@@ -342,6 +345,20 @@ fn create_schema_v4(conn: &Connection) -> DbResult<()> {
             status         TEXT NOT NULL DEFAULT 'pending'
         );
         CREATE INDEX idx_alias_incoming_invites_status ON alias_incoming_invites(status, received_at DESC);
+        "#,
+    )?;
+    Ok(())
+}
+
+/// On-chain profile bio (Settings "Bio Description" + the contact-profile
+/// bio read, both new). `contacts_cache.bio` is the same kind of
+/// lazily-resolved, session-cached mirror `username` already is on that
+/// table (see `commands::contacts::resolve_contact_keys_impl`) — populated
+/// on demand, not eagerly backfilled here.
+fn create_schema_v5(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        r#"
+        ALTER TABLE contacts_cache ADD COLUMN bio TEXT;
         "#,
     )?;
     Ok(())
@@ -606,6 +623,43 @@ mod tests {
         let peer_wallet: Option<String> =
             db.connection().query_row("SELECT peer_wallet FROM alias_contacts WHERE contact_id = 'c1'", [], |row| row.get(0)).unwrap();
         assert_eq!(peer_wallet, None);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Regression guard for the bio feature: an existing on-disk database
+    /// created before `contacts_cache.bio` existed must gain the column on
+    /// reopen, without losing an already-cached contact row.
+    #[test]
+    fn existing_v4_database_migrates_to_v5_in_place() {
+        let path = temp_path("migrate-v4-to-v5");
+        let _ = std::fs::remove_file(&path);
+        let dek = [11u8; 32];
+
+        {
+            let conn = Connection::open_in_memory().unwrap();
+            create_schema_v1(&conn).unwrap();
+            create_schema_v2(&conn).unwrap();
+            create_schema_v3(&conn).unwrap();
+            create_schema_v4(&conn).unwrap();
+            conn.execute(
+                "INSERT INTO contacts_cache (wallet_address, username, encryption_pubkey, scan_pubkey, created_at) \
+                 VALUES ('W1', 'alice', X'01', X'02', 1000)",
+                [],
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 4i64).unwrap();
+            let data = conn.serialize(MAIN_DB).unwrap();
+            let encrypted = aead::encrypt_combined(&dek, &data).unwrap();
+            std::fs::write(&path, encrypted).unwrap();
+        }
+
+        let db = Db::open(&path, &dek).unwrap();
+        let (username, bio): (String, Option<String>) = db
+            .connection()
+            .query_row("SELECT username, bio FROM contacts_cache WHERE wallet_address = 'W1'", [], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap();
+        assert_eq!(username, "alice");
+        assert_eq!(bio, None);
         let _ = std::fs::remove_file(&path);
     }
 }

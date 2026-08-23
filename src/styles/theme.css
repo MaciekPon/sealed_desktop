@@ -1,3 +1,38 @@
+/* Self-hosted Roboto — deliberately NOT a Google Fonts CDN `<link>`. This
+   project treats network privacy as load-bearing (OHTTP hides the app's
+   real IP on every request); pulling a webfont from fonts.googleapis.com
+   would be a plaintext, un-proxied request straight to Google on every
+   launch, undermining that. Drop the actual font files at
+   `src/assets/fonts/Roboto-Regular.ttf` / `Roboto-Medium.ttf` /
+   `Roboto-Bold.ttf` (exact names, from Google Fonts' own "Download
+   family" zip) and these `@font-face` rules pick them up automatically —
+   no other code changes needed. Until those files exist, `font-family`
+   below just falls through to the next name in the stack, same as
+   before. */
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Color tokens lifted directly from the mobile app's theme
    (sealed_app/lib/shared/widgets/theme.dart) so the desktop client reads
    as the same product, not a reskin. */
@@ -8,7 +43,7 @@
   --color-card-alt: rgba(255, 255, 255, 0.06);
   --color-divider: #262626;
 
-  --color-primary: #40be92;
+  --color-primary: #6bfad6;
   --color-primary-deep: #008972;
   --color-primary-dark: #132d27;
   --color-icon-grad-start: #97f5cb;
@@ -48,11 +83,11 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family:
+    "Roboto",
     "Inter",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
-    Roboto,
     sans-serif;
   overflow: hidden;
 }
@@ -84,4 +119,16 @@ textarea {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Shared wrapper for `components/Icon.tsx` — the inline-injected SVG files
+   under `src/assets/icons/`. */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon svg {
+  display: block;
 }

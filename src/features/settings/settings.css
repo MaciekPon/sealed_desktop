@@ -151,7 +151,7 @@
   width: 100%;
   background: none;
   border: none;
-  padding: 10px 2px;
+  padding: 10px 5px;
   text-align: left;
   color: var(--color-text);
 }
@@ -169,16 +169,28 @@ button.settings-list-row:hover {
   color: var(--color-error);
 }
 
+.settings-list-row--accent {
+  background: rgba(107, 250, 214, 0.1);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+}
+
+button.settings-list-row--accent:hover {
+  background: rgba(107, 250, 214, 0.16);
+}
+
+.settings-list-row--accent .settings-list-row__label {
+  color: var(--color-primary);
+}
+
 .settings-list-row__icon {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-card-alt);
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  color: var(--color-text);
 }
 
 .settings-list-row__icon--danger {
@@ -239,6 +251,29 @@ button.settings-list-row:hover {
   padding: 4px 10px;
   font-size: 12.5px;
   font-weight: 600;
+}
+
+.settings-credits-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 5px 18px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.settings-credits-row__info {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.settings-credits-row__pill {
+  flex-shrink: 0;
+  background: var(--color-primary-dark);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 14px;
 }
 
 .settings-list-row__status {

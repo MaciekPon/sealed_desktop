@@ -131,46 +131,71 @@
   font-size: 12.5px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-.contact-profile__qr-card {
-  display: flex;
-  justify-content: center;
-  padding: 16px;
+/* One shared card housing both the QR frame and the address input
+   (mockup, 2026-08-23) — previously the mint border wrapped the QR's
+   *full-width* flex container (stretching the border into a wide bar
+   instead of hugging the square QR), and the address input sat outside
+   in its own separately-backgrounded box below. */
+.contact-profile__wallet-card {
   background: var(--color-card-alt);
-  border: 1px solid var(--color-primary-deep);
   border-radius: var(--radius-md);
+  padding: 20px;
 }
 
-.contact-profile__address-row {
+/* Sized to the QR canvas itself (not the full card width) so the border
+   hugs just the code — the border/radius live on the canvas itself
+   (below), not this wrapper, so the rounding actually clips the QR
+   image's corners instead of just framing a still-square canvas. */
+.contact-profile__qr-frame {
+  width: fit-content;
+  margin: 0 auto;
+  padding: 12px;
+  line-height: 0;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+}
+
+.contact-profile__qr-frame .alias-qr__canvas {
+  border-radius: var(--radius-sm);
+}
+
+/* Styled like a real input field (mockup, 2026-08-23) rather than the
+   previous filled-card row — the full address (grouped into 4-char
+   chunks via `formatWalletAddressGrouped`, not truncated — the whole
+   point of this row is to show it in full) with an inline copy icon at
+   the trailing edge instead of a separate boxed button. Nested inside
+   `.contact-profile__wallet-card`, so its own background is a shade
+   darker than the card behind it rather than repeating the same tone. */
+.contact-profile__address-input {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--color-card-alt);
+  background: var(--color-card);
   border: 1px solid var(--color-divider);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  margin-top: 10px;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-top: 16px;
 }
 
 .contact-profile__address-text {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: 11px;
   font-family: "SFMono-Regular", Consolas, monospace;
   color: var(--color-text-secondary);
   word-break: break-all;
 }
 
-.contact-profile__copy-btn {
+.contact-profile__address-copy-btn {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--color-card);
-  border: 1px solid var(--color-divider);
-  color: var(--color-text);
+  width: 18px;
+  height: 18px;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -184,6 +209,11 @@
   line-height: 1.5;
   color: var(--color-text-secondary);
   margin: 0;
+  /* Bios can contain user-entered newlines (multiline bios are allowed —
+     see `bio.rs`'s validator) — preserve them instead of collapsing to a
+     single line like default HTML whitespace handling would. */
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .contact-profile__bio--disabled {
@@ -191,24 +221,33 @@
   font-style: italic;
 }
 
+/* Each row is its own tinted, full-width card (mockup, 2026-08-23) — no
+   divider lines, spacing between rows comes from the `+` rule below. */
 .contact-profile__row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-divider);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--color-card-alt);
 }
 
-.contact-profile__row:last-of-type {
-  border-bottom: none;
+.contact-profile__row + .contact-profile__row {
+  margin-top: 8px;
+}
+
+.contact-profile__row--danger {
+  background: rgba(229, 115, 115, 0.12);
+}
+
+.contact-profile__row--accent {
+  background: rgba(107, 250, 214, 0.1);
 }
 
 .contact-profile__row-icon {
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--color-card-alt);
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -257,6 +296,9 @@
 .contact-profile__row-btn--accent {
   background: var(--color-primary-dark);
   color: var(--color-primary);
+  /* The "Open chat"/"Start Chat" label on this row reads as too heavy at
+     the shared 600 weight — kept normal specifically for this button. */
+  font-weight: normal;
 }
 
 .contact-profile__delete-link {

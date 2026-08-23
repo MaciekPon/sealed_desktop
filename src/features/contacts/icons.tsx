@@ -1,77 +1,54 @@
-/** Minimal inline SVG icon set for `ContactProfile`, matching the style already established in `features/settings/icons.tsx`. */
+/**
+ * Icon set for `ContactProfile` — each is a thin wrapper around a
+ * standalone `.svg` file in `src/assets/icons/`, loaded via Vite's `?raw`
+ * import and injected inline (see `components/Icon.tsx`) so replacing the
+ * file is all that's needed to change how it looks; no code changes.
+ */
+import { Icon } from "../../components/Icon";
+import userCheckSvg from "../../assets/icons/user-check.svg?raw";
+import userMinusSvg from "../../assets/icons/user-minus.svg?raw";
+import userPlusSvg from "../../assets/icons/user-plus.svg?raw";
+import unlockSvg from "../../assets/icons/unlock.svg?raw";
+import chatBubbleSvg from "../../assets/icons/chat-bubble.svg?raw";
+import phoneSvg from "../../assets/icons/phone.svg?raw";
+import checkSvg from "../../assets/icons/check.svg?raw";
+import createAliasChatSvg from "../../assets/icons/create-alias-chat.svg?raw";
+import copySvg from "../../assets/icons/copy.svg?raw";
 
 type IconProps = { className?: string };
 
-const base = {
-  width: 16,
-  height: 16,
-  viewBox: "0 0 20 20",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.6,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-};
-
 export function IconUserCheck({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <circle cx="8" cy="6.5" r="3" />
-      <path d="M3 17c0-3 2.2-5 5-5" />
-      <path d="M12.5 12.5 14.5 14.5 18 10.5" />
-    </svg>
-  );
+  return <Icon svg={userCheckSvg} className={className} />;
 }
 
 export function IconUserMinus({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <circle cx="8" cy="6.5" r="3" />
-      <path d="M3 17c0-3 2.2-5 5-5" />
-      <path d="M13 11h6" />
-    </svg>
-  );
+  return <Icon svg={userMinusSvg} className={className} />;
 }
 
 export function IconUserPlus({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <circle cx="8" cy="6.5" r="3" />
-      <path d="M3 17c0-3 2.2-5 5-5" />
-      <path d="M16 8v6M13 11h6" />
-    </svg>
-  );
+  return <Icon svg={userPlusSvg} className={className} />;
 }
 
 export function IconLockOpen({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <rect x="4.5" y="9" width="11" height="8" rx="2" />
-      <path d="M6.5 9V6.5a3.5 3.5 0 0 1 6.6-1.6" />
-    </svg>
-  );
+  return <Icon svg={unlockSvg} className={className} />;
 }
 
 export function IconChatBubble({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M3 4.5h14v9H8l-3.5 3v-3H3Z" />
-    </svg>
-  );
+  return <Icon svg={chatBubbleSvg} className={className} />;
 }
 
 export function IconPhone({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M5 3.5h2.5l1 3.5-2 1.5a10 10 0 0 0 5 5l1.5-2 3.5 1V15c0 1-.8 1.8-1.8 1.7C8.7 16 4 11.3 3.3 5.3 3.2 4.3 4 3.5 5 3.5Z" />
-    </svg>
-  );
+  return <Icon svg={phoneSvg} className={className} />;
 }
 
 export function IconCheck({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M4 10.5 8 14.5 16 5.5" />
-    </svg>
-  );
+  return <Icon svg={checkSvg} className={className} />;
+}
+
+export function IconCreateAliasChat({ className }: IconProps) {
+  return <Icon svg={createAliasChatSvg} className={className} />;
+}
+
+export function IconCopy({ className }: IconProps) {
+  return <Icon svg={copySvg} className={className} />;
 }

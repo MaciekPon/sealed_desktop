@@ -71,13 +71,13 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 function seedContacts(): MockContact[] {
   return [
-    { walletAddress: randomWalletAddress(), username: "Andrew", encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 86400, isContact: true, isBlocked: false },
-    { walletAddress: randomWalletAddress(), username: "Andrew 2", encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 80000, isContact: true, isBlocked: false },
-    { walletAddress: randomWalletAddress(), username: "Greg", encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 70000, isContact: true, isBlocked: false },
-    { walletAddress: randomWalletAddress(), username: "Gunter", encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 60000, isContact: true, isBlocked: false },
+    { walletAddress: randomWalletAddress(), username: "Andrew", bio: "Building things with Sealed.", encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 86400, isContact: true, isBlocked: false },
+    { walletAddress: randomWalletAddress(), username: "Andrew 2", bio: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 80000, isContact: true, isBlocked: false },
+    { walletAddress: randomWalletAddress(), username: "Greg", bio: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 70000, isContact: true, isBlocked: false },
+    { walletAddress: randomWalletAddress(), username: "Gunter", bio: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 60000, isContact: true, isBlocked: false },
     // Unnamed, not manually added — demo data for the Spam tab (mirrors an auto-cached key row from an unsolicited message).
-    { walletAddress: randomWalletAddress(), username: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 50000, isContact: false, isBlocked: false },
-    { walletAddress: randomWalletAddress(), username: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 40000, isContact: false, isBlocked: false },
+    { walletAddress: randomWalletAddress(), username: null, bio: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 50000, isContact: false, isBlocked: false },
+    { walletAddress: randomWalletAddress(), username: null, bio: null, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32), pqPublicKey: null, pqPubkeyHash: null, createdAt: nowSeconds() - 40000, isContact: false, isBlocked: false },
   ];
 }
 
@@ -86,6 +86,7 @@ const state = {
   unlocked: false,
   walletAddress: "",
   mnemonic: "",
+  myBio: null as string | null,
   contacts: [] as MockContact[],
   conversations: new Map<string, DecryptedMessage[]>(),
   autoSyncEnabled: true,
@@ -286,6 +287,7 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
     }
     case "get_contact_keys":
     case "resolve_contact_keys": {
+      const isSelf = args?.walletAddress === state.walletAddress;
       const existing = state.contacts.find((c) => c.walletAddress === args?.walletAddress);
       const keys: ContactKeys = {
         pqPublicKey: null,
@@ -293,6 +295,7 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
         encryptionPubkey: fakeBase64(32),
         scanPubkey: fakeBase64(32),
         username: existing?.username ?? null,
+        bio: isSelf ? state.myBio : (existing?.bio ?? null),
       };
       return keys as T;
     }
@@ -308,6 +311,7 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
         state.contacts.push({
           walletAddress,
           username: null,
+          bio: null,
           encryptionPubkey: fakeBase64(32),
           scanPubkey: fakeBase64(32),
           pqPublicKey: null,
@@ -343,6 +347,9 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       return [] as T;
     case "claim_username":
     case "release_username":
+      return "DEMOTXID" as T;
+    case "set_bio":
+      state.myBio = String(args?.bio ?? "").trim() || null;
       return "DEMOTXID" as T;
 
     case "get_credits":

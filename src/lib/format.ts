@@ -18,6 +18,11 @@ export function truncateWalletAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+/** Full address, chunked into 4-character groups (e.g. "ABCD EFGH IJKL…") — the full-address input row in `ContactProfile`. */
+export function formatWalletAddressGrouped(address: string): string {
+  return address.match(/.{1,4}/g)?.join(" ") ?? address;
+}
+
 export function initials(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "?";

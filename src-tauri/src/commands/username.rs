@@ -26,9 +26,13 @@ pub struct UsernameSearchHit {
 /// nothing else in this codebase ever wrote to that column after the
 /// account-creation seed row (bug found 2026-08-07: desktop-sent messages
 /// always carried `sender_username: null`, even after a successful claim).
-/// Two lock scopes, not one, since the on-chain call must not hold the
-/// session guard across its `.await` while this DB write touches it again
-/// afterward — see `commands::messaging::send_message`'s doc comment.
+/// Three lock scopes, not one: the session guard must never be held across
+/// an `.await` while it's also touched again afterward — `Session` holds
+/// the Stronghold `Vault`, which is `!Sync`, so a `&Session` held live
+/// across a second, later `.await` poisons this command's future as
+/// `!Send` (confirmed live 2026-08-23 — see git history around this
+/// comment). One scope per `.await`: the claim itself, then blocking on
+/// confirmation, then the local DB mirror write.
 #[tauri::command]
 pub async fn claim_username(state: State<'_, AppState>, name: String, old_name: Option<String>) -> Result<String, String> {
     let normalized = name.trim().to_lowercase();
@@ -41,6 +45,17 @@ pub async fn claim_username(state: State<'_, AppState>, name: String, old_name: 
         .claim_username(&session.wallet, &session.escrow, &normalized, old_name.as_deref())
         .await
         .map_err(|e| e.to_string())?;
+    drop(session_guard);
+
+    // Block on confirmation — mirrors `UserService.setUsername` in
+    // `user_service.dart`. Without this, the frontend's immediate
+    // post-claim re-resolve (`useResolvedUsername`, cached with
+    // `staleTime: Infinity`) can race the write and permanently cache the
+    // pre-claim username. See `SealedChainClient::wait_for_confirmation`'s
+    // doc comment (same bug class found live for bio, 2026-08-23).
+    let session_guard = state.session.lock().await;
+    let session = session_guard.as_ref().ok_or("not unlocked")?;
+    session.chain_client.wait_for_confirmation(&tx_id).await.map_err(|e| e.to_string())?;
     drop(session_guard);
 
     let session_guard = state.session.lock().await;
