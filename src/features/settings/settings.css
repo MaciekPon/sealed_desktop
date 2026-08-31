@@ -6,6 +6,118 @@
   min-height: 0;
 }
 
+/* Unsaved-changes confirmation (Bio Description's back arrow, 2026-08-24)
+   — shares `.contact-profile-modal-backdrop` (from `contactProfile.css`,
+   already imported by this screen for the wallet-reveal QR frame) for the
+   dimmed overlay, with its own small centered box. */
+.confirm-dialog {
+  width: 100%;
+  max-width: 340px;
+  background: var(--color-card);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.confirm-dialog__message {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Credits-cost breakdown (the "ⓘ" next to "Sealed Credits", 2026-08-31) —
+   same backdrop as `.confirm-dialog` above, content mirrors mobile's
+   `CreditsDialog` (title + Action/Cost table). */
+.credits-info-dialog {
+  width: 100%;
+  max-width: 340px;
+  background: var(--color-card);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.credits-info-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.credits-info-dialog__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.credits-info-dialog__columns {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 16px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.credits-info-dialog__rows {
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px 16px;
+  gap: 8px;
+}
+
+.credits-info-dialog__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  color: var(--color-text);
+}
+
+.credits-info-dialog__cost {
+  flex-shrink: 0;
+  background: var(--color-primary-dark);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.settings-back-btn .icon {
+  width: 9px;
+  height: 15px;
+}
+
 .settings-screen__header {
   display: flex;
   align-items: center;
@@ -73,7 +185,7 @@
   background: var(--color-card-alt);
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
+  padding: 8px 10px;
 }
 
 .settings-row--form {
@@ -81,6 +193,17 @@
   border: none;
   padding: 0;
   gap: 8px;
+}
+
+/* `.btn` defaults to a much taller/larger auth-screen size (14px 20px
+   padding, 15px font) — shrink it to match `.settings-input`'s height in
+   these inline input+button rows (Claim/Redeem). Scoped to
+   `.settings-row.settings-row--form` specifically (not the bare
+   `.settings-row--form` div the log-out confirmation buttons use, which
+   are meant to stay full-size). */
+.settings-row.settings-row--form .btn {
+  padding: 10px 16px;
+  font-size: 13px;
 }
 
 .settings-row--toggle {
@@ -99,13 +222,16 @@
 }
 
 .settings-row--address {
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
 }
 
 .settings-row__value--address {
   word-break: break-all;
   line-height: 1.5;
+  /* The parent `.settings-screen__body--centered` centers everything
+     (the QR code) — the address text itself should stay normal/left. */
+  text-align: left;
 }
 
 .settings-input {
@@ -260,11 +386,39 @@ button.settings-list-row--accent:hover {
   width: 100%;
   padding: 10px 5px 18px;
   border-bottom: 1px solid var(--color-divider);
+  /* Without this, "Redeem code"'s hover highlight sits flush against this
+     border, reading as merged with it. */
+  margin-bottom: 10px;
+}
+
+/* Flex (not `vertical-align`, which is font/baseline-dependent and fiddly
+   to get pixel-perfect) so the icon centers reliably against the text's
+   actual line height regardless of font metrics. */
+.settings-credits-row .settings-list-row__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .settings-credits-row__info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  margin: 0;
+  cursor: pointer;
   color: var(--color-text-tertiary);
-  font-size: 11px;
+}
+
+.settings-credits-row__info:hover {
+  color: var(--color-text-secondary);
+}
+
+.settings-credits-row__info .icon {
+  width: 15px;
+  height: 15px;
 }
 
 .settings-credits-row__pill {
@@ -291,12 +445,15 @@ button.settings-list-row--accent:hover {
   border: 1px solid var(--color-divider);
   padding: 2px;
   cursor: pointer;
+  /* `justify-content` (the old way this repositioned the dot) doesn't
+     reliably animate across browsers — `transform` on the dot itself does,
+     see `.settings-toggle__dot` below. */
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .settings-toggle--on {
   background: var(--color-primary-dark);
   border-color: var(--color-primary-deep);
-  justify-content: flex-end;
 }
 
 .settings-toggle--disabled {
@@ -308,8 +465,12 @@ button.settings-list-row--accent:hover {
   height: 14px;
   border-radius: 50%;
   background: var(--color-text-tertiary);
+  transition: transform 0.2s ease, background-color 0.2s ease;
 }
 
 .settings-toggle--on .settings-toggle__dot {
   background: var(--color-primary);
+  /* Track inner width (34 - 2*1border - 2*2padding = 28) minus dot width
+     (14) = 14px of travel to reach the right edge. */
+  transform: translateX(14px);
 }

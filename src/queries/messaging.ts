@@ -38,6 +38,25 @@ function invalidateConversations(queryClient: ReturnType<typeof useQueryClient>)
 }
 
 /**
+ * **Bug fixed 2026-08-31**: `useSyncMessages`/`useForceResync` only ever
+ * invalidated the conversation *list* (`queryKeys.conversations()`, key
+ * `["conversations"]`) — never the per-contact `conversation(wallet)`/
+ * `unreadCount(wallet)` queries (`useMessagesUpdatedListener.ts`'s
+ * background-tick listener already does this correctly via the same
+ * predicate, but that only fires from the 3s auto-poll's own
+ * `messages-updated` event, never from a manually-triggered sync). A user
+ * hit this live: "Sync now" reported 1 new message, but it never appeared
+ * in the currently-open chat window and no notification fired — the
+ * message *was* fetched and saved server-side, the frontend just never
+ * told the open conversation's query to refetch. Neither mutation knows
+ * which specific wallet(s) got new messages, so — like the background
+ * listener — this invalidates by predicate rather than a specific key.
+ */
+function invalidateOpenConversations(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "conversation" || q.queryKey[0] === "unreadCount" });
+}
+
+/**
  * **Bug fixed 2026-08-11**: `useSyncMessages`/`useForceResync` only ever
  * invalidated the regular wallet-DM conversation list — never
  * `aliasContacts`/`aliasPendingInvites`/`aliasIncomingInvites`. A sync pass
@@ -89,6 +108,7 @@ export function useSyncMessages() {
     // messages *do* count correctly.
     onSuccess: (newCount) => {
       if (newCount > 0) invalidateConversations(queryClient);
+      invalidateOpenConversations(queryClient);
       invalidateAliasState(queryClient);
     },
   });
@@ -100,6 +120,7 @@ export function useForceResync() {
     mutationFn: () => messaging.forceResync(),
     onSuccess: () => {
       invalidateConversations(queryClient);
+      invalidateOpenConversations(queryClient);
       invalidateAliasState(queryClient);
     },
   });

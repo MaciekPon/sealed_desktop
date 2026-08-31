@@ -52,6 +52,26 @@
   flex-shrink: 0;
 }
 
+/* Hamburger (☰) toggle specifically — same box/glyph as `.sidebar__icon-btn`
+   but no background/border chip, per explicit request (2026-08-31). Used by
+   both the "open menu" buttons and `NavDrawer`'s own "close menu" button
+   (same glyph, same control, just toggling which way it points). */
+.hamburger-btn {
+  background: none;
+  border: none;
+  color: var(--color-text);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
 .sidebar__section {
   margin-bottom: 4px;
 }
@@ -295,6 +315,14 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Without this, a flex child's default `min-height: auto` refuses to
+     shrink below its content's intrinsic height, so `.chat-window__messages`'s
+     `overflow-y: auto` never actually kicks in — the box just grows to fit
+     every message instead of scrolling. Chromium/WebView2 (Windows) happens
+     to paper over this in this particular layout; WebKitGTK (Linux/WSL)
+     does not, which is how a live "3 messages saved but only 1 visible"
+     report (2026-08-31) surfaced it. Standard, safe fix on any engine. */
+  min-height: 0;
 }
 
 .chat-window__header {
@@ -312,8 +340,12 @@
 }
 
 /* Opens the contact's profile — the sidebar's old per-row "ⓘ" button was
-   removed in favor of this (2026-08-23). */
-button.chat-window__header-name--clickable {
+   removed in favor of this (2026-08-23). Avatar + name share one button
+   (2026-08-24) so clicking either opens the profile. */
+button.chat-window__header-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: none;
   border: none;
   padding: 0;
@@ -322,8 +354,24 @@ button.chat-window__header-name--clickable {
   text-align: left;
 }
 
-button.chat-window__header-name--clickable:hover {
-  text-decoration: underline;
+.chat-window__header-avatar {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.chat-window__header-avatar--dm {
+  background: rgba(64, 190, 146, 0.16);
+  color: var(--color-primary);
+  font-size: 10px;
 }
 
 .chat-window__header-address {

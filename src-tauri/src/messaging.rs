@@ -805,12 +805,39 @@ fn process_kem_handshakes(
     let my_address = &wallet.address;
     let mut hybrid_saved = 0i64;
 
+    // Temporary diagnostic (2026-08-31): this function had zero logging at
+    // all, unlike `sync_incoming_messages`'s equivalent loop — a live "1 new
+    // message found by Sync Now but nothing shows in the chat window" report
+    // (fresh contact, first message via the hybrid KEM+first-frame path,
+    // which only ever runs through *this* function) couldn't be diagnosed
+    // because nothing here left a trace. Remove once root-caused.
+    log_sync_diagnostic(&format!("process_kem_handshakes: scanning {} kem candidate(s)", candidates.len()));
+
     for msg in candidates {
         if msg.sender_address.is_empty() {
             continue;
         }
-        let existing = contacts::get_contact_keys(conn, &msg.sender_address)?;
-        if existing.pq_shared_secret.is_some() {
+
+        // **Bug fixed 2026-08-31**: this used to skip the whole candidate
+        // the moment ANY `pq_shared_secret` was cached for the sender —
+        // correct for a routine per-tick sync (at most one new candidate),
+        // catastrophic for a force-resync/backlog pass with several
+        // historical hybrid-first-frame candidates from the *same* sender:
+        // candidates arrive newest-first (`fetch_app_call_messages` sorts
+        // descending), so processing the newest one caches a secret, and
+        // every OLDER candidate from that same sender in the same batch
+        // then silently failed this check and was dropped — permanently,
+        // since it's never retried on a later sync either (no `has_message`
+        // row was ever written for it). Confirmed live: a sender's 15:42
+        // and 15:48 messages vanished this way while their 16:30 message
+        // (processed first, being newest) went through fine.
+        //
+        // Fix: only ever skip a specific candidate once *that exact
+        // transaction* has been saved — never based on another candidate's
+        // side effect earlier in this same loop. Each hybrid-first-frame
+        // candidate carries its own complete KEM ciphertext, so decoding it
+        // never actually depended on the cached secret anyway.
+        if messages::has_message(conn, &msg.account_pubkey)? {
             continue;
         }
 
@@ -822,7 +849,15 @@ fn process_kem_handshakes(
         }
 
         if msg.ciphertext.len() == KEM_HANDSHAKE_PAYLOAD_LEN {
-            // Legacy frame: cache the secret, no message payload to save.
+            // Legacy frame: no message payload to save, ever — so unlike
+            // the hybrid branch below, it's correct (and a worthwhile
+            // optimization) to skip once a secret is already cached, even
+            // mid-batch: there is nothing here `has_message` could ever
+            // catch, since this branch never calls `save_message`.
+            let existing = contacts::get_contact_keys(conn, &msg.sender_address)?;
+            if existing.pq_shared_secret.is_some() {
+                continue;
+            }
             let kem_ciphertext = &msg.ciphertext[..KEM_CIPHERTEXT_LEN];
             if let Ok(shared_secret) = crate::crypto::pq::kem_decapsulate(kem_ciphertext, &sealed_keys.pq_private_key) {
                 contacts::save_contact_keys(
@@ -853,12 +888,19 @@ fn process_kem_handshakes(
         )?;
 
         let Some((timestamp_ms, content)) = decode_hybrid_inner_envelope(&envelope_bytes) else {
+            log_sync_diagnostic(&format!(
+                "process_kem_handshakes: hybrid frame decrypted but inner envelope decode failed for {} (tx {})",
+                msg.sender_address, msg.account_pubkey
+            ));
             continue; // secret cached above; payload just couldn't be parsed
         };
-        if messages::has_message(conn, &msg.account_pubkey)? {
-            continue;
-        }
+        // (no `has_message` check here — already done at the top of the
+        // loop, before anything in this branch could have saved it)
         let sender_username = hybrid_sender_usernames.get(&msg.sender_address).cloned().flatten();
+        log_sync_diagnostic(&format!(
+            "process_kem_handshakes: saving hybrid-first-frame message from {} (tx {}), sender_username={:?}",
+            msg.sender_address, msg.account_pubkey, sender_username
+        ));
         messages::save_message(
             conn,
             &DecryptedMessage {
@@ -915,6 +957,31 @@ fn sync_incoming_messages(
             used_wallet_derived = is_for_me;
         }
         if !is_for_me {
+            // Temporary diagnostic (2026-08-31): a live report of a
+            // "regular"-sized (non-KEM-shaped) message from a specific
+            // sender never tag-matching at all, even across repeated Force
+            // Resyncs — mirrors the unresolved 2026-08-25 investigation
+            // with a different peer. Logging every failed tag-check would
+            // be enormous noise across a 1000+-candidate global scan, so
+            // this is scoped to one hardcoded sender wallet for this one
+            // debugging session. Remove once root-caused either way.
+            if msg.sender_address == "TDMIUA3ORYGBBDKXGCLFPYKZWN2GC5IDJMUTZ6UMUKEKC2FPPR7W7PGO5U" {
+                let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+                log_sync_diagnostic(&format!(
+                    "sync_incoming_messages: tag MISMATCH from {} (tx {}, ciphertext_len={}) | \
+                     msg.recipient_tag={} sender_encryption_pubkey={} | \
+                     my_view_private_key_derived_pub={} my_scan_pubkey={} my_encryption_pubkey={} wallet_derived_pub={}",
+                    msg.sender_address,
+                    msg.account_pubkey,
+                    msg.ciphertext.len(),
+                    hex(&msg.recipient_tag),
+                    hex(&msg.sender_encryption_pubkey),
+                    hex(&crate::crypto::x25519::public_key_from_seed(&sealed_keys.view_private_key)),
+                    hex(&sealed_keys.scan_pubkey),
+                    hex(&sealed_keys.encryption_pubkey),
+                    hex(&wallet_derived_pub),
+                ));
+            }
             continue;
         }
         let _ = wallet_derived_pub; // only the private half is needed for decryption below
@@ -949,10 +1016,23 @@ fn sync_incoming_messages(
             Err(_) => match crate::crypto::decrypt_hybrid(&ciphertext, &shared, None) {
                 Ok(d) => d,
                 Err(_) => {
+                    // Temporary diagnostic (2026-08-24) for a live "decrypt
+                    // never succeeds for this sender" report — prints our
+                    // OWN currently-active encryption/scan pubkeys in full
+                    // (public keys, not secrets — safe to log) so they can
+                    // be diffed byte-for-byte against what's actually
+                    // published on-chain for this wallet, to rule in/out a
+                    // local key-derivation bug vs. a stale key cached on
+                    // the sender's end. Remove once this is root-caused.
+                    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
                     log_sync_diagnostic(&format!(
-                        "sync_incoming_messages: decrypt_hybrid failed (both with and without cached pq_secret={}) for {}",
+                        "sync_incoming_messages: decrypt_hybrid failed (both with and without cached pq_secret={}) for {} \
+                         | my_encryption_pubkey={} my_scan_pubkey={} sender_ephemeral_pubkey={} used_wallet_derived={used_wallet_derived}",
                         pq_secret.is_some(),
-                        msg.sender_address
+                        msg.sender_address,
+                        hex(&sealed_keys.encryption_pubkey),
+                        hex(&sealed_keys.scan_pubkey),
+                        hex(&msg.sender_encryption_pubkey),
                     ));
                     continue;
                 }
@@ -1053,6 +1133,14 @@ fn sync_outgoing_messages(
 ) -> Result<i64, MessagingError> {
     let mut new_count = 0i64;
 
+    // Temporary diagnostic (2026-08-31): same reasoning as the equivalent
+    // addition to `process_kem_handshakes` — this loop had zero logging,
+    // so a self-copy (our own sent message, backfilled via sync) that gets
+    // saved under the wrong `recipient_wallet` (the "unknown" fallback
+    // below, if `parse_message_payload` can't parse the JSON) would be
+    // invisible in the UI with no trace of why. Remove once root-caused.
+    log_sync_diagnostic(&format!("sync_outgoing_messages: scanning {} self-copy candidate(s)", candidates.len()));
+
     for msg in candidates {
         if messages::has_message(conn, &msg.account_pubkey)? {
             continue;
@@ -1065,6 +1153,10 @@ fn sync_outgoing_messages(
         let Ok(decrypted) = crate::crypto::decrypt_hybrid(&self_ct, &shared, None) else { continue };
         let Ok(decompressed) = gzip_decompress(&decrypted) else { continue };
         let payload = parse_message_payload(&decompressed);
+        log_sync_diagnostic(&format!(
+            "sync_outgoing_messages: saving self-copy (tx {}), resolved recipient_wallet={:?}",
+            msg.account_pubkey, payload.recipient_wallet
+        ));
 
         messages::save_message(
             conn,

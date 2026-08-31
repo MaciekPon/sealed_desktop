@@ -11,9 +11,30 @@ import { auth, keys, settings } from "../lib/tauri";
 import type { AccountInfo } from "../models";
 import { queryClient } from "../queries/queryClient";
 
-/** Fire-and-forget: never blocks or fails the caller's flow. */
+/**
+ * Fire-and-forget: never blocks or fails the caller's flow — but NOT
+ * literally immediate. Every Tauri command that touches the session
+ * (`state.session` in Rust) shares one `tokio::sync::Mutex`, so
+ * `ensure_keys_published` — which can chain several sequential on-chain
+ * reads/writes over OHTTP (check published keys, check credits, maybe
+ * submit a publish txn) — holds that mutex for however long that takes.
+ * Firing it in the same tick as unlock meant it raced the fresh
+ * `MainLayout` mount's own burst of session-dependent queries
+ * (conversations/contacts/credits/alias state, all fired in parallel) for
+ * that same lock — whichever request got there first blocked the rest
+ * until it finished, which could take several real seconds. A user hit
+ * this live (2026-08-24): after logging in, chats/contacts stayed empty
+ * until a manual app refresh (which re-enters via `bootstrap()`, not
+ * `unlock()`, so this call never fires again and nothing competes for the
+ * lock the second time). Delaying this call lets the login-time query
+ * burst get the lock first and finish fast, uncontended; this call then
+ * takes as long as it needs afterward without blocking anything the user
+ * is actively waiting on.
+ */
 function fireEnsureKeysPublished() {
-  keys.ensurePublished().catch((err) => console.warn("[sessionStore] ensureKeysPublished failed", err));
+  setTimeout(() => {
+    keys.ensurePublished().catch((err) => console.warn("[sessionStore] ensureKeysPublished failed", err));
+  }, 2500);
 }
 
 export type SessionStatus =
@@ -60,7 +81,17 @@ export const useSessionStore = create<SessionState>((set) => ({
       return;
     }
     const unlocked = await auth.isUnlocked();
-    set({ status: unlocked ? "unlocked" : "locked" });
+    if (!unlocked) {
+      set({ status: "locked" });
+      return;
+    }
+    // The backend session can be unlocked even when this store's `account`
+    // is still `null` — e.g. a webview reload (Vite HMR full-reload, or
+    // any other frontend-only restart) that doesn't kill the Rust process.
+    // Re-fetch it explicitly rather than assuming whatever's already in
+    // memory is still right — see `get_account_info`'s Rust doc comment.
+    const info = await auth.getAccountInfo();
+    set({ status: "unlocked", account: info });
   },
 
   createAccount: async (pin) => {

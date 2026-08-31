@@ -20,6 +20,12 @@ interface ChatUiState {
   /** Non-null → `ContactProfile` renders in the right panel instead of
    * `ChatWindow`, regardless of `leftPanel`. */
   viewingContactWallet: string | null;
+  /** Non-null → `ContactProfile` renders as a modal overlay on top of
+   * whatever's already showing, instead of replacing the right panel.
+   * Deliberately separate from `viewingContactWallet` — reached only from
+   * the chat header's avatar/name (2026-08-24), never from the Contacts
+   * address book, which keeps the existing full-panel behavior. */
+  viewingContactWalletModal: string | null;
   /** The hamburger-menu navigation drawer — an overlay, not part of the
    * left/right panel split, since it renders on top of whichever panels
    * are underneath. Only Settings renders *inside* this drawer (per the
@@ -33,6 +39,8 @@ interface ChatUiState {
   clearSelection: () => void;
   openContactProfile: (walletAddress: string) => void;
   closeContactProfile: () => void;
+  openContactProfileModal: (walletAddress: string) => void;
+  closeContactProfileModal: () => void;
   openContactsList: () => void;
   goToChats: () => void;
   openNavDrawer: () => void;
@@ -46,14 +54,36 @@ export const useChatUiStore = create<ChatUiState>((set) => ({
   selectedIncomingInviteRef: null,
   leftPanel: "chats",
   viewingContactWallet: null,
+  viewingContactWalletModal: null,
   navDrawerOpen: false,
   navDrawerMode: "nav",
   selectContact: (walletAddress) =>
-    set({ selectedWallet: walletAddress, selectedAliasContactId: null, selectedIncomingInviteRef: null, leftPanel: "chats", viewingContactWallet: null }),
+    set({
+      selectedWallet: walletAddress,
+      selectedAliasContactId: null,
+      selectedIncomingInviteRef: null,
+      leftPanel: "chats",
+      viewingContactWallet: null,
+      viewingContactWalletModal: null,
+    }),
   selectAliasContact: (contactId) =>
-    set({ selectedAliasContactId: contactId, selectedWallet: null, selectedIncomingInviteRef: null, leftPanel: "chats", viewingContactWallet: null }),
+    set({
+      selectedAliasContactId: contactId,
+      selectedWallet: null,
+      selectedIncomingInviteRef: null,
+      leftPanel: "chats",
+      viewingContactWallet: null,
+      viewingContactWalletModal: null,
+    }),
   selectIncomingInvite: (inviteRef) =>
-    set({ selectedIncomingInviteRef: inviteRef, selectedWallet: null, selectedAliasContactId: null, leftPanel: "chats", viewingContactWallet: null }),
+    set({
+      selectedIncomingInviteRef: inviteRef,
+      selectedWallet: null,
+      selectedAliasContactId: null,
+      leftPanel: "chats",
+      viewingContactWallet: null,
+      viewingContactWalletModal: null,
+    }),
   clearSelection: () => set({ selectedWallet: null, selectedAliasContactId: null, selectedIncomingInviteRef: null }),
   // Opening a profile never touches `leftPanel` — it can be reached from a
   // chat header's name (leftPanel stays "chats") or an address-book row
@@ -61,10 +91,26 @@ export const useChatUiStore = create<ChatUiState>((set) => ({
   // panel was already showing underneath.
   openContactProfile: (walletAddress) => set({ viewingContactWallet: walletAddress }),
   closeContactProfile: () => set({ viewingContactWallet: null }),
+  openContactProfileModal: (walletAddress) => set({ viewingContactWalletModal: walletAddress }),
+  closeContactProfileModal: () => set({ viewingContactWalletModal: null }),
   openContactsList: () =>
-    set({ leftPanel: "contacts", selectedWallet: null, selectedAliasContactId: null, selectedIncomingInviteRef: null, viewingContactWallet: null }),
+    set({
+      leftPanel: "contacts",
+      selectedWallet: null,
+      selectedAliasContactId: null,
+      selectedIncomingInviteRef: null,
+      viewingContactWallet: null,
+      viewingContactWalletModal: null,
+    }),
   goToChats: () =>
-    set({ leftPanel: "chats", viewingContactWallet: null, selectedWallet: null, selectedAliasContactId: null, selectedIncomingInviteRef: null }),
+    set({
+      leftPanel: "chats",
+      viewingContactWallet: null,
+      viewingContactWalletModal: null,
+      selectedWallet: null,
+      selectedAliasContactId: null,
+      selectedIncomingInviteRef: null,
+    }),
   openNavDrawer: () => set({ navDrawerOpen: true, navDrawerMode: "nav" }),
   closeNavDrawer: () => set({ navDrawerOpen: false }),
   setNavDrawerMode: (mode) => set({ navDrawerMode: mode }),

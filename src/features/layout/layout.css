@@ -1,9 +1,55 @@
+@keyframes nav-drawer-backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes nav-drawer-backdrop-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes nav-drawer-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes nav-drawer-slide-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
 .nav-drawer-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
   z-index: 100;
   display: flex;
+  animation: nav-drawer-backdrop-fade-in 0.2s ease-out;
+}
+
+/* Applied while `NavDrawer.tsx` keeps the component mounted for one more
+   tick after `open` goes false, so the reverse animation has something to
+   play before it actually unmounts — `animation-fill-mode: forwards` holds
+   the fully-faded/off-screen end state for those last few frames instead
+   of snapping back to the "in" state. */
+.nav-drawer-backdrop--closing {
+  animation: nav-drawer-backdrop-fade-out 0.2s ease-in forwards;
 }
 
 .nav-drawer {
@@ -15,6 +61,11 @@
   display: flex;
   flex-direction: column;
   padding: 20px 16px;
+  animation: nav-drawer-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-drawer--closing {
+  animation: nav-drawer-slide-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Settings / Contacts list, hosted inside the drawer — those screens bring

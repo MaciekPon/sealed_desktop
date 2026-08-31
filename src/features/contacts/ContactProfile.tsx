@@ -32,6 +32,11 @@ import {
 } from "./icons";
 import "./contactProfile.css";
 
+interface ContactProfileProps {
+  walletAddress?: string;
+  onClose?: () => void;
+}
+
 /**
  * Reached from a contact row's info button in `ContactsSidebar`, restyled
  * 2026-08-18 to match a supplied design mockup — avatar/QR/bio/action-row
@@ -52,10 +57,24 @@ import "./contactProfile.css";
  * `useResolvedBio` for a contact never fully resolved before. Calling (the
  * phone icon) is still disabled — there is no voice-call feature in this
  * app at all.
+ *
+ * Renders two ways (2026-08-24): as the full right panel (reached from the
+ * Contacts address book — no props, reads `viewingContactWallet`/
+ * `closeContactProfile` from the store; no close button at all — the left
+ * panel's contact list is always visible in this mode, so there's nothing
+ * to "go back" to) or, when given `walletAddress`/`onClose` explicitly,
+ * inside `ContactProfileModal`'s overlay (reached from the chat header's
+ * avatar/name — "✕" close button, since a modal needs an explicit
+ * dismiss). All internal navigation (open chat, delete, alias actions)
+ * closes via whichever `close` applies, so both entry points behave
+ * correctly without needing to know which one they are.
  */
-export function ContactProfile() {
-  const walletAddress = useChatUiStore((s) => s.viewingContactWallet);
-  const closeContactProfile = useChatUiStore((s) => s.closeContactProfile);
+export function ContactProfile({ walletAddress: walletAddressProp, onClose }: ContactProfileProps = {}) {
+  const viewingContactWallet = useChatUiStore((s) => s.viewingContactWallet);
+  const closeContactProfileStore = useChatUiStore((s) => s.closeContactProfile);
+  const walletAddress = walletAddressProp ?? viewingContactWallet;
+  const isModal = onClose !== undefined;
+  const close = onClose ?? closeContactProfileStore;
   const clearSelection = useChatUiStore((s) => s.clearSelection);
   const selectContact = useChatUiStore((s) => s.selectContact);
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
@@ -127,13 +146,13 @@ export function ContactProfile() {
 
   function openChat() {
     selectContact(walletAddress as string);
-    closeContactProfile();
+    close();
   }
 
   async function handleDelete() {
     await deleteContact.mutateAsync(walletAddress as string);
     clearSelection();
-    closeContactProfile();
+    close();
   }
 
   async function handleCopyAddress() {
@@ -147,13 +166,13 @@ export function ContactProfile() {
     try {
       if (existingAliasContact) {
         selectAliasContact(existingAliasContact.contactId);
-        closeContactProfile();
+        close();
       } else if (theirIncomingAliasInvite) {
         const newContact = await acceptIncomingInvite.mutateAsync({
           inviteRef: theirIncomingAliasInvite.inviteRef,
         });
         selectAliasContact(newContact.contactId);
-        closeContactProfile();
+        close();
       } else if (!myPendingAliasInvite) {
         await createInviteForContact.mutateAsync({
           recipientWallet: walletAddress as string,
@@ -167,13 +186,11 @@ export function ContactProfile() {
   return (
     <div className="contact-profile">
       <div className="contact-profile__header">
-        <button
-          className="sidebar__icon-btn"
-          onClick={closeContactProfile}
-          aria-label="Back"
-        >
-          ←
-        </button>
+        {isModal && (
+          <button className="sidebar__icon-btn" onClick={close} aria-label="Close">
+            ✕
+          </button>
+        )}
         <div className="contact-profile__header-inner">
           <h2 className="contact-profile__header-name">
             {displayName ?? formatWalletAddress(walletAddress)}

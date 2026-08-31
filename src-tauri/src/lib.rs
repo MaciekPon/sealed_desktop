@@ -55,6 +55,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::auth::has_existing_account,
             commands::auth::is_unlocked,
+            commands::auth::get_account_info,
             commands::auth::create_account,
             commands::auth::restore_account,
             commands::auth::unlock_account,
@@ -115,6 +116,7 @@ pub fn run() {
             commands::alias::mark_alias_conversation_read,
             commands::alias::rename_alias_contact,
             commands::alias::delete_alias_contact,
+            commands::alias::delete_all_alias_contacts,
             commands::alias::create_invite_for_contact,
             commands::alias::list_incoming_invites,
             commands::alias::accept_incoming_invite,

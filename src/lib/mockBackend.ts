@@ -196,6 +196,10 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       return state.hasAccount as T;
     case "is_unlocked":
       return state.unlocked as T;
+    case "get_account_info":
+      return (state.unlocked
+        ? { walletAddress: state.walletAddress, encryptionPubkey: fakeBase64(32), scanPubkey: fakeBase64(32) }
+        : null) as T;
 
     case "create_account": {
       state.hasAccount = true;
@@ -470,6 +474,11 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       const contactId = String(args?.contactId);
       state.aliasContacts = state.aliasContacts.filter((c) => c.contactId !== contactId);
       state.aliasConversations.delete(contactId);
+      return undefined as T;
+    }
+    case "delete_all_alias_contacts": {
+      state.aliasContacts = [];
+      state.aliasConversations.clear();
       return undefined as T;
     }
 

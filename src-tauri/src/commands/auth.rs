@@ -86,6 +86,23 @@ pub async fn is_unlocked(state: State<'_, AppState>) -> Result<bool, ()> {
     Ok(is_unlocked_impl(&state).await)
 }
 
+/// Account info for the *currently* unlocked session, or `None` if locked.
+/// Needed because `AccountInfo` is otherwise only ever returned inline from
+/// `create_account`/`restore_account`/`unlock_account`'s own success path —
+/// nothing re-supplies it if the frontend's in-memory `sessionStore` state
+/// is lost while the backend session is still alive (e.g. a webview reload
+/// during `npm run tauri dev` that doesn't restart the Rust process): the
+/// old `bootstrap()` flow saw `is_unlocked() == true` and set
+/// `status: "unlocked"` without ever populating `account`, leaving the
+/// username/wallet-address display permanently blank until a full app
+/// restart. `bootstrap()` now calls this whenever it finds the session
+/// already unlocked.
+#[tauri::command]
+pub async fn get_account_info(state: State<'_, AppState>) -> Result<Option<AccountInfo>, ()> {
+    let session = state.session.lock().await;
+    Ok(session.as_ref().map(|s| account_info(&s.wallet, &s.sealed_keys)))
+}
+
 #[tauri::command]
 pub async fn create_account(state: State<'_, AppState>, pin: String) -> Result<NewAccountInfo, String> {
     create_account_impl(&state, &pin).await

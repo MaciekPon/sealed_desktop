@@ -249,6 +249,19 @@ pub fn delete_alias_contact(conn: &mut Connection, contact_id: &str) -> rusqlite
     tx.commit()
 }
 
+/// Deletes every established alias contact and their messages — the
+/// Settings screen's "Delete all alias chats" action (2026-08-24), gated
+/// behind a PIN re-entry on the frontend. Does not touch
+/// `alias_pending_invites`/`alias_incoming_invites` — only accepted,
+/// established contacts, matching the feature as asked for. Same explicit
+/// cascade reasoning as `delete_alias_contact`.
+pub fn delete_all_alias_contacts(conn: &mut Connection) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM alias_messages", [])?;
+    tx.execute("DELETE FROM alias_contacts", [])?;
+    tx.commit()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,5 +341,22 @@ mod tests {
 
         delete_alias_contact(db.connection_mut(), &accepted.contact_id).unwrap();
         assert!(get_alias_contact(db.connection(), &accepted.contact_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn delete_all_alias_contacts_removes_everything() {
+        let mut db = temp_db("delete-all");
+        let created_a = onboarding::create_invitation_envelope().unwrap();
+        let accepted_a = onboarding::accept_invitation_from_envelope(&created_a.envelope_bytes).unwrap();
+        insert_accepted_contact(db.connection(), &accepted_a, Some("Alice"), None, 1000).unwrap();
+
+        let created_b = onboarding::create_invitation_envelope().unwrap();
+        let accepted_b = onboarding::accept_invitation_from_envelope(&created_b.envelope_bytes).unwrap();
+        insert_accepted_contact(db.connection(), &accepted_b, Some("Bob"), None, 2000).unwrap();
+
+        assert_eq!(get_all_alias_contacts(db.connection()).unwrap().len(), 2);
+
+        delete_all_alias_contacts(db.connection_mut()).unwrap();
+        assert!(get_all_alias_contacts(db.connection()).unwrap().is_empty());
     }
 }

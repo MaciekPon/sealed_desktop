@@ -13,7 +13,7 @@ import {
   useSendAliasMessage,
 } from "../../queries/alias";
 import { useChatUiStore } from "../../stores/chatUiStore";
-import { formatWalletAddress } from "../../lib/format";
+import { avatarColor, formatWalletAddress, initials } from "../../lib/format";
 import { MessageBubble } from "./MessageBubble";
 import "./chat.css";
 
@@ -23,7 +23,7 @@ export function ChatWindow() {
   const selectedIncomingInviteRef = useChatUiStore((s) => s.selectedIncomingInviteRef);
   const clearSelection = useChatUiStore((s) => s.clearSelection);
   const selectAliasContact = useChatUiStore((s) => s.selectAliasContact);
-  const openContactProfile = useChatUiStore((s) => s.openContactProfile);
+  const openContactProfileModal = useChatUiStore((s) => s.openContactProfileModal);
   const leftPanel = useChatUiStore((s) => s.leftPanel);
 
   const { data: contacts = [] } = useContacts();
@@ -135,11 +135,12 @@ export function ChatWindow() {
 
   const isAlias = selectedAliasContactId !== null;
   const isIncoming = selectedIncomingInviteRef !== null;
+  const displayName = !isAlias && !isIncoming ? (contact?.username ?? resolvedUsername ?? null) : null;
   const headerName = isIncoming
     ? (incomingInvite?.peerUsername ?? (incomingInvite ? formatWalletAddress(incomingInvite.peerWallet) : "Alias invitation"))
     : isAlias
       ? (aliasContact?.label ?? "Alias chat")
-      : (contact?.username ?? resolvedUsername ?? formatWalletAddress(selectedWallet as string));
+      : (displayName ?? formatWalletAddress(selectedWallet as string));
   const activeMessages = isAlias ? aliasMessages : messages;
   const sending = isAlias ? sendAliasMessage.isPending : sendMessage.isPending;
 
@@ -148,11 +149,15 @@ export function ChatWindow() {
       <div className="chat-window__header">
         <div>
           {!isAlias && !isIncoming ? (
-            <button
-              className="chat-window__header-name chat-window__header-name--clickable"
-              onClick={() => openContactProfile(selectedWallet as string)}
-            >
-              {headerName}
+            <button className="chat-window__header-identity" onClick={() => openContactProfileModal(selectedWallet as string)}>
+              {displayName ? (
+                <span className="chat-window__header-avatar" style={{ background: avatarColor(selectedWallet as string) }}>
+                  {initials(displayName)}
+                </span>
+              ) : (
+                <span className="chat-window__header-avatar chat-window__header-avatar--dm">DM</span>
+              )}
+              <span className="chat-window__header-name">{headerName}</span>
             </button>
           ) : (
             <p className="chat-window__header-name">{headerName}</p>

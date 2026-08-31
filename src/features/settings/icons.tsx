@@ -21,6 +21,7 @@ import spamFilterSvg from "../../assets/icons/spam-filter.svg?raw";
 import recoveryKeySvg from "../../assets/icons/recovery-key.svg?raw";
 import logoutSvg from "../../assets/icons/logout.svg?raw";
 import chevronRightSvg from "../../assets/icons/chevron-right.svg?raw";
+import backSvg from "../../assets/icons/back.svg?raw";
 
 type IconProps = { className?: string };
 
@@ -86,4 +87,8 @@ export function IconPower({ className }: IconProps) {
 
 export function IconChevronRight({ className }: IconProps) {
   return <Icon svg={chevronRightSvg} className={className} />;
+}
+
+export function IconBack({ className }: IconProps) {
+  return <Icon svg={backSvg} className={className} />;
 }

@@ -198,9 +198,19 @@ pub async fn force_resync(state: State<'_, AppState>) -> Result<i64, String> {
 pub async fn get_conversation(state: State<'_, AppState>, contact_wallet: String) -> Result<Vec<DecryptedMessageDto>, String> {
     let session_guard = state.session.lock().await;
     let session = session_guard.as_ref().ok_or("not unlocked")?;
-    messages::get_conversation_messages(session.db.connection(), &session.wallet.address, &contact_wallet)
-        .map(|rows| rows.iter().map(DecryptedMessageDto::from).collect())
-        .map_err(|e| e.to_string())
+    let result = messages::get_conversation_messages(session.db.connection(), &session.wallet.address, &contact_wallet)
+        .map(|rows| rows.iter().map(DecryptedMessageDto::from).collect::<Vec<_>>())
+        .map_err(|e| e.to_string());
+    // Temporary diagnostic (2026-08-31): a live "3 new messages found by
+    // Sync Now, but only 1 shows in the chat window" report — need to know
+    // whether the DB genuinely only has 1 row for this wallet pair (a save
+    // bug) or has all 3 and the frontend just isn't rendering them. Remove
+    // once root-caused.
+    match &result {
+        Ok(rows) => messaging::log_sync_diagnostic(&format!("get_conversation({contact_wallet}): returning {} row(s)", rows.len())),
+        Err(e) => messaging::log_sync_diagnostic(&format!("get_conversation({contact_wallet}): query failed: {e}")),
+    }
+    result
 }
 
 #[tauri::command]

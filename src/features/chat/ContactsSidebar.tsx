@@ -154,7 +154,7 @@ export function ContactsSidebar() {
     <aside className="sidebar">
       <div className="sidebar__header">
         <div className="sidebar__brand">
-          <button className="sidebar__icon-btn" onClick={openNavDrawer} aria-label="Menu">
+          <button className="hamburger-btn" onClick={openNavDrawer} aria-label="Menu">
             ☰
           </button>
           <svg width="20" height="20" viewBox="0 0 120 120" fill="none" className="sidebar__brand-mark">

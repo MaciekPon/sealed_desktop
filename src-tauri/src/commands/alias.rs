@@ -326,6 +326,18 @@ pub async fn delete_alias_contact(state: State<'_, AppState>, contact_id: String
     session.db.save(&session.dek).map_err(|e| e.to_string())
 }
 
+/// Settings screen's "Delete all alias chats" — the frontend gates this
+/// behind a PIN re-entry (`settings::verify_pin`) before calling it, same
+/// pattern as viewing the recovery phrase or changing the termination
+/// code. Only established contacts; pending/incoming invites are untouched.
+#[tauri::command]
+pub async fn delete_all_alias_contacts(state: State<'_, AppState>) -> Result<(), String> {
+    let mut session_guard = state.session.lock().await;
+    let session = session_guard.as_mut().ok_or("not unlocked")?;
+    alias_contacts::delete_all_alias_contacts(session.db.connection_mut()).map_err(|e| e.to_string())?;
+    session.db.save(&session.dek).map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Contact-initiated alias chat (Phase 7h) — delivers the invite/accept
 // envelope as a regular DM to an already-known wallet contact, instead of

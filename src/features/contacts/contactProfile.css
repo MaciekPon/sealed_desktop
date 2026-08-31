@@ -6,6 +6,47 @@
   min-height: 0;
 }
 
+/* Modal presentation (2026-08-24) — reached from the chat header's
+   avatar/name, floats over whatever's underneath instead of replacing the
+   right panel. Same dimmed-backdrop convention as `.nav-drawer-backdrop`. */
+.contact-profile-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.contact-profile-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 100%;
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+}
+
+/* Content fills the modal's own width (2026-08-24) — the panel view
+   (Contacts address book) keeps its own 500px content cap below
+   unchanged; only the modal box itself was ever meant to be this size. */
+.contact-profile-modal .contact-profile__header,
+.contact-profile-modal .contact-profile__body {
+  max-width: none;
+}
+
+/* The panel view's header has no right padding at all (`0 0 20px 20px`)
+   since its action icons never reached the panel's far edge under the
+   500px content cap — now that the modal's header stretches full-width,
+   the icons/pill sit flush against the modal's edge without this. */
+.contact-profile-modal .contact-profile__header {
+  padding-right: 20px;
+}
+
 .contact-profile__header {
   display: flex;
   align-items: center;

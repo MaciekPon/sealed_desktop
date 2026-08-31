@@ -40,6 +40,8 @@ import type {
 export const auth = {
   hasExistingAccount: () => invoke<boolean>("has_existing_account"),
   isUnlocked: () => invoke<boolean>("is_unlocked"),
+  /** Account info for the currently unlocked session, or `null` if locked — see `get_account_info`'s Rust doc comment. */
+  getAccountInfo: () => invoke<AccountInfo | null>("get_account_info"),
   createAccount: (pin: string) => invoke<NewAccountInfo>("create_account", { pin }),
   restoreAccount: (pin: string, mnemonic: string) => invoke<NewAccountInfo>("restore_account", { pin, mnemonic }),
   unlockAccount: (pin: string) => invoke<UnlockOutcome>("unlock_account", { pin }),
@@ -132,6 +134,7 @@ export const alias = {
   markConversationAsRead: (contactId: string) => invoke<void>("mark_alias_conversation_read", { contactId }),
   rename: (contactId: string, label: string) => invoke<void>("rename_alias_contact", { contactId, label }),
   delete: (contactId: string) => invoke<void>("delete_alias_contact", { contactId }),
+  deleteAll: () => invoke<void>("delete_all_alias_contacts"),
   createInviteForContact: (recipientWallet: string, label?: string) =>
     invoke<AliasPendingInvite>("create_invite_for_contact", { recipientWallet, label: label ?? null }),
   listIncomingInvites: () => invoke<AliasIncomingInvite[]>("list_incoming_invites"),

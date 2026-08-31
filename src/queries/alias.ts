@@ -159,3 +159,15 @@ export function useDeleteAliasContact() {
     },
   });
 }
+
+/** Settings screen's "Delete all alias chats" (2026-08-24) — PIN-gated on the frontend before this ever fires. */
+export function useDeleteAllAliasContacts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => alias.deleteAll(),
+    onSuccess: () => {
+      invalidateAliasLists(queryClient);
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "aliasConversation" });
+    },
+  });
+}

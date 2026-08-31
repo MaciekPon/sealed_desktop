@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useChatUiStore } from "../../stores/chatUiStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useResolvedUsername } from "../../queries/contacts";
@@ -34,7 +35,30 @@ export function NavDrawer() {
   const { data: username } = useResolvedUsername(account?.walletAddress ?? "", !!account);
   const { data: credits } = useCredits();
 
-  if (!open) return null;
+  // `open` flipping to `false` used to unmount this immediately — no exit
+  // animation was possible. Keep it mounted for one more animation cycle
+  // (`closing`), playing the reverse slide-out, before actually unmounting.
+  // Duration must match the longer of `.nav-drawer`'s/`.nav-drawer-backdrop`'s
+  // CSS animation durations (250ms) in `layout.css`.
+  const [rendered, setRendered] = useState(open);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true);
+      setClosing(false);
+      return;
+    }
+    if (!rendered) return;
+    setClosing(true);
+    const timer = setTimeout(() => {
+      setRendered(false);
+      setClosing(false);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [open, rendered]);
+
+  if (!rendered) return null;
 
   function goToChats() {
     storeGoToChats();
@@ -48,8 +72,8 @@ export function NavDrawer() {
 
   if (mode === "settings") {
     return (
-      <div className="nav-drawer-backdrop" onClick={close}>
-        <div className="nav-drawer nav-drawer--wide" onClick={(e) => e.stopPropagation()}>
+      <div className={`nav-drawer-backdrop ${closing ? "nav-drawer-backdrop--closing" : ""}`} onClick={close}>
+        <div className={`nav-drawer nav-drawer--wide ${closing ? "nav-drawer--closing" : ""}`} onClick={(e) => e.stopPropagation()}>
           <SettingsScreen onClose={() => setMode("nav")} />
         </div>
       </div>
@@ -57,10 +81,10 @@ export function NavDrawer() {
   }
 
   return (
-    <div className="nav-drawer-backdrop" onClick={close}>
-      <div className="nav-drawer" onClick={(e) => e.stopPropagation()}>
+    <div className={`nav-drawer-backdrop ${closing ? "nav-drawer-backdrop--closing" : ""}`} onClick={close}>
+      <div className={`nav-drawer ${closing ? "nav-drawer--closing" : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="nav-drawer__brand">
-          <button className="sidebar__icon-btn" onClick={close} aria-label="Close menu">
+          <button className="hamburger-btn" onClick={close} aria-label="Close menu">
             ☰
           </button>
           <svg width="20" height="20" viewBox="0 0 120 120" fill="none" className="sidebar__brand-mark">

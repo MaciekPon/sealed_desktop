@@ -1,27 +1,28 @@
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useCredits, useRedeemCode } from "../../queries/credits";
-import { useWalletBalance } from "../../queries/wallet";
 import { useResolvedBio, useResolvedUsername } from "../../queries/contacts";
 import { useClaimUsername, useReleaseUsername } from "../../queries/username";
 import { useSetBio } from "../../queries/bio";
+import { useDeleteAllAliasContacts } from "../../queries/alias";
 
 /** Mirrors `bio::MAX_BYTES` in `src-tauri/src/bio.rs` — keep in sync. */
 const BIO_MAX_BYTES = 160;
 import { useForceResync, useSyncMessages } from "../../queries/messaging";
 import { useDisableTerminationCode, useIsTerminationConfigured, useSetTerminationCode } from "../../queries/settings";
-import { settings as settingsApi, keys as keysApi } from "../../lib/tauri";
+import { settings as settingsApi } from "../../lib/tauri";
 import { openExternalUrl } from "../../lib/openExternal";
 import { PinPad } from "../auth/PinPad";
 import { QrCode } from "../alias/QrCode";
-import { formatAlgoBalance, truncateWalletAddress } from "../../lib/format";
+import { truncateWalletAddress } from "../../lib/format";
+import { IconCheck, IconCopy } from "../contacts/icons";
+import "../contacts/contactProfile.css";
 import {
   IconAt,
-  IconAtom,
+  IconBack,
   IconBell,
-  IconFilter,
+  IconInfo,
   IconKey,
   IconLock,
   IconPencil,
@@ -48,7 +49,8 @@ type View =
   | "termination_setCode"
   | "termination_confirmCode"
   | "seed_verify"
-  | "seed_view";
+  | "seed_view"
+  | "deleteAliasChats_verify";
 
 /**
  * The one screen that reaches everything Phase 1/2 of the desktop parity
@@ -70,8 +72,13 @@ type View =
  * through the same lazy chain-resolve path as username
  * (`useResolvedBio`/`useResolvedUsername` share one query key). Real,
  * already-working features that don't appear in the mockup at all
- * (auto-sync toggle, "Sync now", "Republish keys") are kept in an
- * "Advanced" section below the mockup's sections rather than deleted.
+ * (auto-sync toggle, "Sync now") are kept in an "Advanced" section below
+ * the mockup's sections rather than deleted. The manual "Republish keys"
+ * row that used to live here was removed (2026-08-24, user's explicit
+ * call) — `sessionStore.ts`'s `fireEnsureKeysPublished` already fires
+ * `ensure_keys_published` automatically on every unlock, so a manual
+ * escape hatch shouldn't be needed; if key-sync issues resurface, fix the
+ * automatic path rather than reintroducing this button.
  *
  * Hosted inside `NavDrawer` (not a standalone `screen`) per the mockup —
  * the drawer's own panel swaps to this content instead of the whole app
@@ -94,19 +101,18 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   }, [settingsLoaded, loadSettings]);
 
   const { data: credits } = useCredits();
-  const { data: balanceMicroAlgos } = useWalletBalance();
   const { data: myUsername } = useResolvedUsername(account?.walletAddress ?? "", !!account);
   const { data: myBio } = useResolvedBio(account?.walletAddress ?? "", !!account);
   const redeemCode = useRedeemCode();
   const claimUsername = useClaimUsername();
   const releaseUsername = useReleaseUsername();
   const setBio = useSetBio();
+  const deleteAllAliasContacts = useDeleteAllAliasContacts();
   const { data: terminationConfigured } = useIsTerminationConfigured();
   const setTerminationCode = useSetTerminationCode();
   const disableTerminationCode = useDisableTerminationCode();
   const forceResync = useForceResync();
   const syncNow = useSyncMessages();
-  const republishKeys = useMutation({ mutationFn: () => keysApi.ensurePublished() });
 
   const [view, setView] = useState<View>("main");
   const [error, setError] = useState<string | null>(null);
@@ -123,9 +129,10 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const [seedWords, setSeedWords] = useState<string[] | null>(null);
 
   const [redeemCodeInput, setRedeemCodeInput] = useState("");
-  const [redeemUsernameInput, setRedeemUsernameInput] = useState("");
   const [claimInput, setClaimInput] = useState("");
   const [bioInput, setBioInput] = useState("");
+  const [showBioDiscardConfirm, setShowBioDiscardConfirm] = useState(false);
+  const [showCreditsInfo, setShowCreditsInfo] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
@@ -270,16 +277,37 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // --- delete all alias chats ---
+
+  async function handleDeleteAliasChatsVerifyPin(pin: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const ok = await settingsApi.verifyPin(pin);
+      if (!ok) {
+        setError("Wrong PIN.");
+        setResetToken((t) => t + 1);
+        return;
+      }
+      await deleteAllAliasContacts.mutateAsync();
+      setNotice("All alias chats deleted.");
+      backToMain();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // --- credits / username (no PIN gate — same as mobile) ---
 
   async function handleRedeem() {
     setError(null);
     setNotice(null);
     try {
-      await redeemCode.mutateAsync({ code: redeemCodeInput.trim(), username: redeemUsernameInput.trim() || undefined });
+      await redeemCode.mutateAsync({ code: redeemCodeInput.trim() });
       setNotice("Code redeemed.");
       setRedeemCodeInput("");
-      setRedeemUsernameInput("");
       backToMain();
     } catch (e) {
       setError(String(e));
@@ -340,23 +368,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     try {
       const newCount = await syncNow.mutateAsync(false);
       setNotice(newCount > 0 ? `Synced — ${newCount} new message(s).` : "Synced — nothing new.");
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  /** Manual trigger + visible feedback for what was previously a silent,
-   * fire-and-forget call on unlock (`sessionStore.ts`'s `fireEnsureKeysPublished`)
-   * — a user hit a case where an incoming message from someone who'd never
-   * cached our keys still failed to decrypt, and there was no way to check
-   * (or force) whether our corrected key material had actually made it
-   * on-chain, versus the publish having silently failed/no-op'd earlier. */
-  async function handleRepublishKeys() {
-    setError(null);
-    setNotice(null);
-    try {
-      const published = await republishKeys.mutateAsync();
-      setNotice(published ? "Keys republished on-chain." : "Keys already up to date on-chain — nothing to publish.");
     } catch (e) {
       setError(String(e));
     }
@@ -437,12 +448,25 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
       />
     );
   }
+  if (view === "deleteAliasChats_verify") {
+    return (
+      <PinPad
+        headline="Enter your PIN to delete all alias chats"
+        subhead="This permanently deletes every established alias chat and its messages on this device. This cannot be undone."
+        errorText={error}
+        loading={busy}
+        resetToken={resetToken}
+        onBack={backToMain}
+        onComplete={handleDeleteAliasChatsVerifyPin}
+      />
+    );
+  }
   if (view === "seed_view" && seedWords) {
     return (
       <div className="settings-screen">
         <div className="settings-screen__header">
-          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
-            ←
+          <button className="settings-back-btn" onClick={backToMain} aria-label="Back">
+            <IconBack />
           </button>
           <h2 className="settings-screen__title">Recovery phrase</h2>
         </div>
@@ -468,8 +492,8 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     return (
       <div className="settings-screen">
         <div className="settings-screen__header">
-          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
-            ←
+          <button className="settings-back-btn" onClick={backToMain} aria-label="Back">
+            <IconBack />
           </button>
           <h2 className="settings-screen__title">Username</h2>
         </div>
@@ -504,11 +528,21 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   if (view === "bio") {
     const byteLength = new TextEncoder().encode(bioInput).length;
     const overLimit = byteLength > BIO_MAX_BYTES;
+    const bioHasUnsavedChanges = bioInput !== (myBio ?? "");
+
+    function handleBioBack() {
+      if (bioHasUnsavedChanges) {
+        setShowBioDiscardConfirm(true);
+      } else {
+        backToMain();
+      }
+    }
+
     return (
       <div className="settings-screen">
         <div className="settings-screen__header">
-          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
-            ←
+          <button className="settings-back-btn" onClick={handleBioBack} aria-label="Back">
+            <IconBack />
           </button>
           <h2 className="settings-screen__title">Bio Description</h2>
         </div>
@@ -533,12 +567,32 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           >
             {setBio.isPending ? "Saving…" : "Save"}
           </button>
-          {!!myBio && (
-            <button className="btn btn--text settings-btn-full" disabled={setBio.isPending} onClick={() => handleSetBio("")}>
-              Clear bio
-            </button>
-          )}
+          <button className="btn btn--text settings-btn-full" disabled={setBio.isPending} onClick={backToMain}>
+            Cancel
+          </button>
         </div>
+
+        {showBioDiscardConfirm && (
+          <div className="contact-profile-modal-backdrop" onClick={() => setShowBioDiscardConfirm(false)}>
+            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+              <p className="confirm-dialog__message">You have unsaved changes to your bio. Leave without saving?</p>
+              <div className="confirm-dialog__actions">
+                <button className="btn btn--text" onClick={() => setShowBioDiscardConfirm(false)}>
+                  Keep editing
+                </button>
+                <button
+                  className="btn btn--danger"
+                  onClick={() => {
+                    setShowBioDiscardConfirm(false);
+                    backToMain();
+                  }}
+                >
+                  Discard changes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -547,15 +601,15 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     return (
       <div className="settings-screen">
         <div className="settings-screen__header">
-          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
-            ←
+          <button className="settings-back-btn" onClick={backToMain} aria-label="Back">
+            <IconBack />
           </button>
           <h2 className="settings-screen__title">Redeem code</h2>
         </div>
         <div className="settings-screen__body">
           {notice && <p className="settings-screen__notice">{notice}</p>}
           {error && <p className="pin-pad__error">{error}</p>}
-          <p className="settings-screen__hint">Enter a credit code to top up your balance — 1 credit sends 1 message.</p>
+          <p className="settings-screen__hint">Enter your 16 characters code below</p>
           <div className="settings-row settings-row--form">
             <input
               className="settings-input"
@@ -567,12 +621,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
               {redeemCode.isPending ? "Redeeming…" : "Redeem"}
             </button>
           </div>
-          <input
-            className="settings-input settings-input--full"
-            placeholder="Claim this username with the code (optional)"
-            value={redeemUsernameInput}
-            onChange={(e) => setRedeemUsernameInput(e.target.value)}
-          />
         </div>
       </div>
     );
@@ -582,22 +630,22 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     return (
       <div className="settings-screen">
         <div className="settings-screen__header">
-          <button className="sidebar__icon-btn" onClick={backToMain} aria-label="Back">
-            ←
+          <button className="settings-back-btn" onClick={backToMain} aria-label="Back">
+            <IconBack />
           </button>
           <h2 className="settings-screen__title">Wallet address</h2>
         </div>
         <div className="settings-screen__body settings-screen__body--centered">
-          {account && <QrCode value={account.walletAddress} size={200} />}
+          {account && (
+            <div className="contact-profile__qr-frame">
+              <QrCode value={account.walletAddress} size={200} />
+            </div>
+          )}
           <div className="settings-row settings-row--address">
             <span className="settings-row__value settings-row__value--address">{account?.walletAddress ?? "—"}</span>
-            <button className="btn btn--secondary" disabled={!account} onClick={handleCopyAddress}>
-              {addressCopied ? "Copied!" : "Copy"}
+            <button className="contact-profile__address-copy-btn" disabled={!account} onClick={handleCopyAddress} aria-label="Copy address" title={addressCopied ? "Copied!" : "Copy"}>
+              {addressCopied ? <IconCheck /> : <IconCopy />}
             </button>
-          </div>
-          <div className="settings-row">
-            <span className="settings-row__label">Balance</span>
-            <span className="settings-row__value">{balanceMicroAlgos !== undefined ? formatAlgoBalance(balanceMicroAlgos) : "—"}</span>
           </div>
         </div>
       </div>
@@ -646,7 +694,10 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           <div className="settings-credits-row">
             <div className="settings-list-row__text">
               <span className="settings-list-row__label">
-                Sealed Credits <span className="settings-credits-row__info" title="1 credit = 1 message">ⓘ</span>
+                Sealed Credits{" "}
+                <button className="settings-credits-row__info" aria-label="What do credits cost?" onClick={() => setShowCreditsInfo(true)}>
+                  <IconInfo />
+                </button>
               </span>
               <span className="settings-list-row__sublabel">
                 enough to send <strong>{credits ?? 0}</strong> Messages
@@ -669,6 +720,39 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           />
         </SettingsSection>
 
+        {showCreditsInfo && (
+          <div className="contact-profile-modal-backdrop" onClick={() => setShowCreditsInfo(false)}>
+            {/* Content mirrors `CreditsDialog` in `sealed_app/lib/ui/shared/widgets/dialogs.dart` verbatim
+                (title, "Action"/"Cost" header, and the 4 action-cost rows) — desktop has no per-action
+                credit-cost breakdown UI elsewhere, so this is the one place that info lives. */}
+            <div className="credits-info-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="credits-info-dialog__header">
+                <h3 className="credits-info-dialog__title">Sealed Credits</h3>
+                <button className="sidebar__icon-btn" onClick={() => setShowCreditsInfo(false)} aria-label="Close">
+                  ✕
+                </button>
+              </div>
+              <div className="credits-info-dialog__columns">
+                <span>Action</span>
+                <span>Cost</span>
+              </div>
+              <div className="credits-info-dialog__rows">
+                {[
+                  ["1 Normal Chat message", "1 credit"],
+                  ["1 Alias Chat message", "1 credit"],
+                  ["Nickname change", "1 credit"],
+                  ["Bio change", "1 credit"],
+                ].map(([action, cost]) => (
+                  <div className="credits-info-dialog__row" key={action}>
+                    <span>{action}</span>
+                    <span className="credits-info-dialog__cost">{cost}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <SettingsSection title="Notification">
           <SettingsListRow icon={<IconBell />} label="Push notification" disabled right={<ToggleIndicator on={false} disabled />} />
         </SettingsSection>
@@ -684,7 +768,11 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         </SettingsSection>
 
         <SettingsSection title="Preferences">
-          <SettingsListRow icon={<IconTrash />} label="Auto-Delete Local Files" sublabel="Enable Local Data Wipe" disabled right={<ToggleIndicator on={false} disabled />} />
+          {/* Hidden from the UI for now (2026-08-31, user request) — kept in
+              the code, not deleted, for whenever these actually ship:
+              <SettingsListRow icon={<IconTrash />} label="Auto-Delete Local Files" sublabel="Enable Local Data Wipe" disabled right={<ToggleIndicator on={false} disabled />} />
+              <SettingsListRow icon={<IconAtom />} label="Falcon" sublabel="Post-quantum Transaction" disabled right={<ToggleIndicator on={false} disabled />} />
+              <SettingsListRow icon={<IconFilter />} label="Spam filter" disabled right={<ToggleIndicator on={false} disabled />} /> */}
           <SettingsListRow
             icon={<IconRefresh className={forceResync.isPending ? "settings-list-row__icon--spin" : undefined} />}
             label="Force re-sync"
@@ -692,8 +780,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             right={<span className="settings-list-row__status">{forceResync.isPending ? "Syncing…" : "Synced ✓"}</span>}
             onClick={handleForceResync}
           />
-          <SettingsListRow icon={<IconAtom />} label="Falcon" sublabel="Post-quantum Transaction" disabled right={<ToggleIndicator on={false} disabled />} />
-          <SettingsListRow icon={<IconFilter />} label="Spam filter" disabled right={<ToggleIndicator on={false} disabled />} />
         </SettingsSection>
 
         <SettingsSection title="Advanced">
@@ -710,17 +796,17 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             right={<span className="settings-list-row__status">{syncNow.isPending ? "Syncing…" : ""}</span>}
             onClick={handleSyncNow}
           />
-          <SettingsListRow
-            icon={<IconKey />}
-            label="Republish keys"
-            sublabel="Confirm your encryption keys are up to date on-chain"
-            right={<span className="settings-list-row__status">{republishKeys.isPending ? "Publishing…" : ""}</span>}
-            onClick={handleRepublishKeys}
-          />
           <SettingsListRow icon={<IconKey />} label="View recovery phrase" onClick={() => setView("seed_verify")} />
         </SettingsSection>
 
         <section className="settings-section settings-section--danger">
+          <SettingsListRow
+            icon={<IconTrash />}
+            label="Delete all alias chats"
+            sublabel="Permanently removes every established alias chat"
+            danger
+            onClick={() => setView("deleteAliasChats_verify")}
+          />
           {!confirmingLogout ? (
             <SettingsListRow icon={<IconPower />} label="Log out" danger onClick={() => setConfirmingLogout(true)} />
           ) : (

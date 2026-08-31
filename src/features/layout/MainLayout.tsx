@@ -1,6 +1,7 @@
 import { ContactsSidebar } from "../chat/ContactsSidebar";
 import { ChatWindow } from "../chat/ChatWindow";
 import { ContactProfile } from "../contacts/ContactProfile";
+import { ContactProfileModal } from "../contacts/ContactProfileModal";
 import { ContactsListSidebar } from "../contacts/ContactsListSidebar";
 import { NavDrawer } from "./NavDrawer";
 import { useChatUiStore } from "../../stores/chatUiStore";
@@ -14,6 +15,7 @@ export function MainLayout() {
     <div className="main-layout">
       {leftPanel === "contacts" ? <ContactsListSidebar /> : <ContactsSidebar />}
       {viewingContactWallet ? <ContactProfile /> : <ChatWindow />}
+      <ContactProfileModal />
       <NavDrawer />
     </div>
   );
