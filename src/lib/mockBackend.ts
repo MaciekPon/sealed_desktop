@@ -90,6 +90,8 @@ const state = {
   contacts: [] as MockContact[],
   conversations: new Map<string, DecryptedMessage[]>(),
   autoSyncEnabled: true,
+  notificationsEnabled: true,
+  minimizeToTrayEnabled: true,
   terminationConfigured: false,
   aliasPendingInvites: [] as AliasPendingInvite[],
   aliasContacts: [] as AliasContact[],
@@ -235,9 +237,19 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       return undefined as T;
 
     case "get_app_settings":
-      return { autoSyncEnabled: state.autoSyncEnabled } satisfies AppSettings as T;
+      return {
+        autoSyncEnabled: state.autoSyncEnabled,
+        notificationsEnabled: state.notificationsEnabled,
+        minimizeToTrayEnabled: state.minimizeToTrayEnabled,
+      } satisfies AppSettings as T;
     case "set_auto_sync_enabled":
       state.autoSyncEnabled = Boolean(args?.enabled);
+      return undefined as T;
+    case "set_notifications_enabled":
+      state.notificationsEnabled = Boolean(args?.enabled);
+      return undefined as T;
+    case "set_minimize_to_tray_enabled":
+      state.minimizeToTrayEnabled = Boolean(args?.enabled);
       return undefined as T;
 
     case "is_termination_configured":

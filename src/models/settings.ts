@@ -2,4 +2,6 @@
 
 export interface AppSettings {
   autoSyncEnabled: boolean;
+  notificationsEnabled: boolean;
+  minimizeToTrayEnabled: boolean;
 }

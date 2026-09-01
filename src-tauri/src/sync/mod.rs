@@ -76,13 +76,21 @@ async fn tick(app_handle: &AppHandle) {
         }
     }
 
-    if !settings::load(&state.app_dir).auto_sync_enabled {
+    let app_settings = settings::load(&state.app_dir);
+    if !app_settings.auto_sync_enabled {
         return;
     }
 
     match crate::commands::messaging::sync_messages(state, false).await {
         Ok(new_count) if new_count > 0 => {
-            notify_new_messages(app_handle);
+            // Sync itself, and the event the frontend relies on for
+            // badges/chat-window updates, always run regardless of this
+            // setting — only the native OS toast is gated. Turning
+            // notifications off must never turn off sync (2026-09-01,
+            // explicit product decision — see `settings.rs`'s doc comment).
+            if app_settings.notifications_enabled {
+                notify_new_messages(app_handle);
+            }
             if let Err(e) = app_handle.emit(MESSAGES_UPDATED_EVENT, ()) {
                 eprintln!("[sync] failed to emit {MESSAGES_UPDATED_EVENT}: {e}");
             }

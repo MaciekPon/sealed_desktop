@@ -38,11 +38,15 @@
   font-weight: 700;
 }
 
+/* Now exclusively the "✕" close buttons (ContactProfile, SettingsScreen,
+   credits-info dialog) — hamburger/back use their own dedicated classes
+   (`.hamburger-btn`/`.settings-back-btn`) with no chip at all. Fully round,
+   not `--radius-sm`, per explicit request (2026-08-31). */
 .sidebar__icon-btn {
   background: var(--color-card-alt);
   border: 1px solid var(--color-divider);
   color: var(--color-text);
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   width: 32px;
   height: 32px;
   display: flex;

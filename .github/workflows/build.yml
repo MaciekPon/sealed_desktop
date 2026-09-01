@@ -54,15 +54,31 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater artifacts tauri-action generates (because
+          # `bundle.createUpdaterArtifacts: true` in tauri.conf.json) and
+          # publishes a `latest.json` manifest alongside the installers —
+          # this is what `@tauri-apps/plugin-updater`'s configured endpoint
+          # actually reads. Secrets set once in the repo's Settings ->
+          # Secrets and variables -> Actions; see the private key file this
+          # session generated (not committed anywhere) for the values.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: app-v__VERSION__
           releaseName: "Sealed v__VERSION__"
           releaseBody: |
-            Unsigned test build — Windows will show a SmartScreen warning
-            ("Windows protected your PC" → More info → Run anyway), macOS
-            will block it via Gatekeeper the first time (right-click the
-            app → Open, or System Settings → Privacy & Security → Open
-            Anyway). This is expected for an unsigned build.
+            Unsigned build (no OS code-signing cert yet) — Windows will show
+            a SmartScreen warning ("Windows protected your PC" → More info →
+            Run anyway), macOS will block it via Gatekeeper the first time
+            (right-click the app → Open, or System Settings → Privacy &
+            Security → Open Anyway). This is expected until a code-signing
+            certificate is set up. In-app auto-update is signed and will
+            work regardless of this.
           releaseDraft: true
-          prerelease: true
+          # Not a prerelease: `plugins.updater.endpoints` in tauri.conf.json
+          # points at GitHub's "latest release" API, which explicitly
+          # excludes prereleases (and drafts) — leaving this `true` would
+          # make the update endpoint never resolve to anything. Publishing
+          # the draft (manual step, unchanged) is still the real gate.
+          prerelease: false
           args: ${{ matrix.args }}

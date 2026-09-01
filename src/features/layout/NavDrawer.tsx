@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useChatUiStore } from "../../stores/chatUiStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useUpdateStore } from "../../stores/updateStore";
 import { useResolvedUsername } from "../../queries/contacts";
 import { useCredits } from "../../queries/credits";
 import { avatarColor, initials, truncateWalletAddress } from "../../lib/format";
 import { SettingsScreen } from "../settings/SettingsScreen";
-import { IconChats, IconContacts, IconFiles, IconSettings } from "./icons";
+import { IconAutoUpdate, IconChats, IconContacts, IconFiles, IconSettings } from "./icons";
 import "./layout.css";
 
 /**
@@ -34,6 +35,12 @@ export function NavDrawer() {
   const account = useSessionStore((s) => s.account);
   const { data: username } = useResolvedUsername(account?.walletAddress ?? "", !!account);
   const { data: credits } = useCredits();
+
+  const updateAvailable = useUpdateStore((s) => s.available);
+  const updateVersion = useUpdateStore((s) => s.version);
+  const updateInstalling = useUpdateStore((s) => s.installing);
+  const updateError = useUpdateStore((s) => s.error);
+  const installUpdate = useUpdateStore((s) => s.installAndRelaunch);
 
   // `open` flipping to `false` used to unmount this immediately — no exit
   // animation was possible. Keep it mounted for one more animation cycle
@@ -136,6 +143,21 @@ export function NavDrawer() {
             Settings
           </button>
         </nav>
+
+        {updateAvailable && (
+          <button className="nav-drawer__update-banner" onClick={installUpdate} disabled={updateInstalling}>
+            <span className="nav-drawer__update-banner-icon">
+              <IconAutoUpdate />
+            </span>
+            <span className="nav-drawer__update-banner-text">
+              <span className="nav-drawer__update-banner-title">{updateInstalling ? "Installing…" : "New Update"}</span>
+              <span className="nav-drawer__update-banner-hint">
+                {updateInstalling ? "Sealed will restart automatically" : `download version ${updateVersion}`}
+              </span>
+              {updateError && <span className="nav-drawer__update-banner-error">{updateError}</span>}
+            </span>
+          </button>
+        )}
 
         <div className="nav-drawer__footer">
           <div className="nav-drawer__footer-row">

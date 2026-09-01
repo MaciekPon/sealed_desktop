@@ -1109,7 +1109,20 @@ fn sync_incoming_messages(
             conn,
             &DecryptedMessage {
                 id: msg.account_pubkey.clone(),
-                sender_wallet: payload.sender_wallet,
+                // **Bug fixed 2026-09-01**: this used to be `payload.sender_wallet`
+                // — the *self-reported* value embedded in the sender's own JSON
+                // content, not cryptographically tied to anything. If it ever
+                // differs from the transaction's real on-chain `sender` (stale
+                // client-side identity, formatting difference, whatever), every
+                // message saved through this path groups under a different
+                // `get_conversations` conversation_key than messages from the
+                // same real sender saved via `process_kem_handshakes` (which
+                // already correctly uses `msg.sender_address`) — the exact
+                // "same contact shows as two separate rows in the chat list"
+                // symptom a user hit live. `msg.sender_address` is the
+                // authoritative value (it's who actually signed and submitted
+                // this transaction); always prefer it over anything self-reported.
+                sender_wallet: msg.sender_address.clone(),
                 sender_username: payload.sender_username,
                 recipient_wallet: wallet.address.clone(),
                 recipient_username: payload.recipient_username,
@@ -1181,8 +1194,15 @@ fn sync_outgoing_messages(
 /// Parsed message JSON payload, permissive like `_parseMessagePayload`:
 /// falls back to treating the whole decrypted string as plain content if
 /// it isn't valid JSON, rather than erroring the whole sync pass.
+///
+/// Deliberately has no `sender_wallet` field, even though the wire-format
+/// `MessagePayload` carries one: that value is self-reported by the sender's
+/// own client, not cryptographically tied to anything, and both call sites
+/// that construct a `DecryptedMessage` already have an authoritative wallet
+/// address on hand instead (`msg.sender_address` for incoming,
+/// `wallet.address` for our own outgoing self-copies) — see the bug this
+/// fixed in `sync_incoming_messages`'s doc comment at its `save_message` call.
 struct ParsedPayload {
-    sender_wallet: String,
     sender_username: Option<String>,
     recipient_wallet: Option<String>,
     recipient_username: Option<String>,
@@ -1193,19 +1213,12 @@ fn parse_message_payload(decompressed: &[u8]) -> ParsedPayload {
     let text = String::from_utf8_lossy(decompressed);
     match serde_json::from_str::<MessagePayload>(&text) {
         Ok(p) => ParsedPayload {
-            sender_wallet: p.sender_wallet,
             sender_username: p.sender_username,
             recipient_wallet: Some(p.recipient_wallet),
             recipient_username: p.recipient_username,
             content: p.content,
         },
-        Err(_) => ParsedPayload {
-            sender_wallet: "unknown".to_string(),
-            sender_username: None,
-            recipient_wallet: None,
-            recipient_username: None,
-            content: text.into_owned(),
-        },
+        Err(_) => ParsedPayload { sender_username: None, recipient_wallet: None, recipient_username: None, content: text.into_owned() },
     }
 }
 
@@ -1329,14 +1342,13 @@ mod tests {
     fn parse_message_payload_falls_back_to_plain_text_on_invalid_json() {
         let parsed = parse_message_payload(b"not json at all");
         assert_eq!(parsed.content, "not json at all");
-        assert_eq!(parsed.sender_wallet, "unknown");
+        assert_eq!(parsed.recipient_wallet, None);
     }
 
     #[test]
     fn parse_message_payload_reads_well_formed_json() {
         let json = br#"{"sender_wallet":"A","recipient_wallet":"B","content":"hi","timestamp":123}"#;
         let parsed = parse_message_payload(json);
-        assert_eq!(parsed.sender_wallet, "A");
         assert_eq!(parsed.recipient_wallet.as_deref(), Some("B"));
         assert_eq!(parsed.content, "hi");
     }

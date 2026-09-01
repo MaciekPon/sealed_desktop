@@ -68,10 +68,34 @@ export function ChatWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWallet]);
 
+  // **Bug fixed 2026-09-01**: the effect above only fires on `selectedWallet`
+  // *changing* — a message that arrives from the background poll while this
+  // exact conversation is already open never got marked read at all, so the
+  // sidebar's unread badge kept climbing the whole time the user was
+  // actively looking at the chat, only clearing once they left and
+  // re-entered. Re-running `markAsRead` whenever the message list itself
+  // changes (not just on open) covers that case too — cheap and idempotent,
+  // `mark_as_read`'s SQL only touches rows that are still unread.
+  useEffect(() => {
+    if (selectedWallet && messages.length > 0) {
+      markAsRead.mutate(selectedWallet);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWallet, messages.length]);
+
   useEffect(() => {
     if (selectedAliasContactId) markAliasAsRead.mutate(selectedAliasContactId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAliasContactId]);
+
+  // Same fix as the wallet-DM effect above, same reason: mark-as-read only
+  // used to fire on open, not on new messages arriving while already open.
+  useEffect(() => {
+    if (selectedAliasContactId && aliasMessages.length > 0) {
+      markAliasAsRead.mutate(selectedAliasContactId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAliasContactId, aliasMessages.length]);
 
   async function handleSend() {
     if (!draft.trim()) return;

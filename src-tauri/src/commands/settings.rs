@@ -4,9 +4,13 @@
 //! `features/settings/screens/settings_screen.dart` and
 //! `change_termination_flow.dart`.
 //!
-//! Desktop drops the "targeted push" toggle entirely (see the plan:
-//! background poll + native toast replaces OS push), so only
-//! `auto_sync_enabled` survives from `AppSettingsService`.
+//! Desktop drops the "targeted push" (OS push-token-registration) toggle
+//! entirely — no APNs/FCM equivalent exists here, background poll + native
+//! toast replaces it unconditionally — so only `auto_sync_enabled` survives
+//! from `AppSettingsService`. `notifications_enabled` is a desktop-native
+//! addition (2026-09-01, not a port of anything from mobile): it only gates
+//! the native OS toast itself, never the underlying poll/sync — see
+//! `settings.rs`'s doc comment and `sync/mod.rs::tick`.
 
 use tauri::State;
 
@@ -24,6 +28,16 @@ pub fn get_app_settings(state: State<'_, AppState>) -> AppSettings {
 #[tauri::command]
 pub fn set_auto_sync_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     settings::set_auto_sync_enabled(&state.app_dir, enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_notifications_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    settings::set_notifications_enabled(&state.app_dir, enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_minimize_to_tray_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    settings::set_minimize_to_tray_enabled(&state.app_dir, enabled).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

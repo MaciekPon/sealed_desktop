@@ -109,6 +109,7 @@ pub fn accept_invitation_from_envelope(invite_envelope_bytes: &[u8]) -> Result<A
     })
 }
 
+#[derive(Debug)]
 pub struct CompletedInvite {
     pub peer_enc_pub: [u8; 32],
     pub peer_scan_pub: [u8; 32],

@@ -61,12 +61,16 @@ type View =
  *
  * Main-view layout restyled 2026-08-18 to match a supplied design mockup —
  * see the plan/memory entry for the source screenshots. Rows that need
- * backend work the app doesn't have yet (Push notification, Auto-Delete
- * Local Files, Falcon/post-quantum transactions, Spam filter) are rendered
- * per the mockup but disabled/non-interactive, per an explicit product
- * decision rather than silently guessed at. Two exceptions: "Top up Wallet"
+ * backend work the app doesn't have yet (Auto-Delete Local Files,
+ * Falcon/post-quantum transactions, Spam filter — hidden from the UI
+ * entirely as of 2026-08-31, kept commented in the JSX, not deleted) are
+ * disabled/non-interactive, per an explicit product decision rather than
+ * silently guessed at. Growing list of exceptions: "Top up Wallet"
  * (2026-08-20) opens https://sealed.channel/top-up in the system browser
- * instead of a built-in payment flow, and "Bio Description" (2026-08-23) is
+ * instead of a built-in payment flow, "Push notification" (2026-09-01) is a
+ * real, desktop-native toggle gating only the OS toast (never the
+ * underlying poll/sync — see `settings.rs`'s doc comment), and "Bio
+ * Description" (2026-08-23) is
  * a real `setBio(byte[])void` on-chain write — see `chain/client.rs`'s
  * `set_bio`, mirroring `UserService.setBio` in `user_service.dart` — reached
  * through the same lazy chain-resolve path as username
@@ -92,9 +96,13 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const logOut = useSessionStore((s) => s.logOut);
 
   const autoSyncEnabled = useSettingsStore((s) => s.autoSyncEnabled);
+  const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
+  const minimizeToTrayEnabled = useSettingsStore((s) => s.minimizeToTrayEnabled);
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.load);
   const setAutoSyncEnabled = useSettingsStore((s) => s.setAutoSyncEnabled);
+  const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
+  const setMinimizeToTrayEnabled = useSettingsStore((s) => s.setMinimizeToTrayEnabled);
 
   useEffect(() => {
     if (!settingsLoaded) loadSettings();
@@ -754,7 +762,12 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         )}
 
         <SettingsSection title="Notification">
-          <SettingsListRow icon={<IconBell />} label="Push notification" disabled right={<ToggleIndicator on={false} disabled />} />
+          <SettingsListRow
+            icon={<IconBell />}
+            label="Push notification"
+            sublabel="Auto-sync keeps running either way"
+            right={<ToggleIndicator on={notificationsEnabled} onClick={() => setNotificationsEnabled(!notificationsEnabled)} />}
+          />
         </SettingsSection>
 
         <SettingsSection title="Passwords">
@@ -791,6 +804,12 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           />
           <SettingsListRow
             icon={<IconRefresh />}
+            label="Minimize to tray on close"
+            sublabel="Keep running in the background instead of quitting"
+            right={<ToggleIndicator on={minimizeToTrayEnabled} onClick={() => setMinimizeToTrayEnabled(!minimizeToTrayEnabled)} />}
+          />
+          <SettingsListRow
+            icon={<IconRefresh />}
             label="Sync now"
             sublabel="Quick check for anything new since the last sync"
             right={<span className="settings-list-row__status">{syncNow.isPending ? "Syncing…" : ""}</span>}
@@ -808,7 +827,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             onClick={() => setView("deleteAliasChats_verify")}
           />
           {!confirmingLogout ? (
-            <SettingsListRow icon={<IconPower />} label="Log out" danger onClick={() => setConfirmingLogout(true)} />
+            <SettingsListRow icon={<IconPower />} label="Log out & delete your data" danger onClick={() => setConfirmingLogout(true)} />
           ) : (
             <div className="settings-row--form">
               <p className="settings-screen__hint">This wipes this device's local data. Make sure you've backed up your recovery phrase.</p>

@@ -21,6 +21,7 @@ mod state;
 mod sync;
 mod sync_state;
 mod termination;
+mod tray;
 mod username;
 mod zk;
 
@@ -31,6 +32,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let app_dir = app
                 .path()
@@ -50,6 +53,7 @@ pub fn run() {
 
             app.manage(AppState::new(app_dir));
             sync::spawn(app.handle().clone());
+            tray::setup(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -74,6 +78,8 @@ pub fn run() {
             commands::wallet::get_wallet_balance,
             commands::settings::get_app_settings,
             commands::settings::set_auto_sync_enabled,
+            commands::settings::set_notifications_enabled,
+            commands::settings::set_minimize_to_tray_enabled,
             commands::settings::is_termination_configured,
             commands::settings::set_termination_code,
             commands::settings::disable_termination_code,

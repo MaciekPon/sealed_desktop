@@ -19,8 +19,8 @@ import {
 } from "../../queries/alias";
 import { avatarColor, formatWalletAddress, formatWalletAddressGrouped, initials } from "../../lib/format";
 import { QrCode } from "../alias/QrCode";
-import { IconLock } from "../settings/icons";
 import {
+  IconBlock,
   IconCheck,
   IconCopy,
   IconCreateAliasChat,
@@ -154,6 +154,10 @@ export function ContactProfile({ walletAddress: walletAddressProp, onClose }: Co
     clearSelection();
     close();
   }
+  // Not exposed as a button right now (see the commented-out JSX below) —
+  // this keeps the function itself intact and callable if it comes back,
+  // without tripping `noUnusedLocals`.
+  void handleDelete;
 
   async function handleCopyAddress() {
     await navigator.clipboard.writeText(walletAddress as string);
@@ -317,9 +321,9 @@ export function ContactProfile({ walletAddress: walletAddressProp, onClose }: Co
             />
           ) : (
             <ProfileActionRow
-              icon={<IconLock />}
+              icon={<IconBlock />}
               label="Block Wallet"
-              tone="danger"
+              tone="neutral"
               buttonLabel="Block"
               disabled={busy}
               onClick={() => blockContact.mutate(walletAddress as string)}
@@ -336,13 +340,12 @@ export function ContactProfile({ walletAddress: walletAddressProp, onClose }: Co
           />
           {aliasError && <p className="pin-pad__error">{aliasError}</p>}
 
-          <button
-            className="btn btn--text contact-profile__delete-link"
-            disabled={busy}
-            onClick={handleDelete}
-          >
-            Delete contact (clears cached keys/name too)
-          </button>
+          {/* Hidden from the UI per explicit request (2026-09-01) — `handleDelete`
+              stays wired up and callable, just not exposed as a button right
+              now. Re-add if a real need for it resurfaces:
+              <button className="btn btn--text contact-profile__delete-link" disabled={busy} onClick={handleDelete}>
+                Delete contact (clears cached keys/name too)
+              </button> */}
         </div>
       </div>
     </div>

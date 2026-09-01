@@ -14,6 +14,7 @@ import phoneSvg from "../../assets/icons/phone.svg?raw";
 import checkSvg from "../../assets/icons/check.svg?raw";
 import createAliasChatSvg from "../../assets/icons/create-alias-chat.svg?raw";
 import copySvg from "../../assets/icons/copy.svg?raw";
+import blockContactSvg from "../../assets/icons/block-contact.svg?raw";
 
 type IconProps = { className?: string };
 
@@ -51,4 +52,8 @@ export function IconCreateAliasChat({ className }: IconProps) {
 
 export function IconCopy({ className }: IconProps) {
   return <Icon svg={copySvg} className={className} />;
+}
+
+export function IconBlock({ className }: IconProps) {
+  return <Icon svg={blockContactSvg} className={className} />;
 }

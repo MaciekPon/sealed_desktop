@@ -9,6 +9,7 @@ import navChatsSvg from "../../assets/icons/nav-chats.svg?raw";
 import navContactsSvg from "../../assets/icons/nav-contacts.svg?raw";
 import navFilesSvg from "../../assets/icons/nav-files.svg?raw";
 import navSettingsSvg from "../../assets/icons/nav-settings.svg?raw";
+import autoUpdateSvg from "../../assets/icons/auto-update.svg?raw";
 
 type IconProps = { className?: string };
 
@@ -26,4 +27,8 @@ export function IconFiles({ className }: IconProps) {
 
 export function IconSettings({ className }: IconProps) {
   return <Icon svg={navSettingsSvg} className={className} />;
+}
+
+export function IconAutoUpdate({ className }: IconProps) {
+  return <Icon svg={autoUpdateSvg} className={className} />;
 }

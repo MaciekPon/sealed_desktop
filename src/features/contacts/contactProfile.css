@@ -262,8 +262,10 @@
   font-style: italic;
 }
 
-/* Each row is its own tinted, full-width card (mockup, 2026-08-23) — no
-   divider lines, spacing between rows comes from the `+` rule below. */
+/* Each row is a full-width card, no divider lines — spacing between rows
+   comes from the `+` rule below. Same flat background as `.contact-profile__bio`
+   for every tone (2026-09-01 correction — only the icon/label/button carry
+   the tone's color, the card itself doesn't). */
 .contact-profile__row {
   display: flex;
   align-items: center;
@@ -277,14 +279,6 @@
   margin-top: 8px;
 }
 
-.contact-profile__row--danger {
-  background: rgba(229, 115, 115, 0.12);
-}
-
-.contact-profile__row--accent {
-  background: rgba(107, 250, 214, 0.1);
-}
-
 .contact-profile__row-icon {
   flex-shrink: 0;
   width: 18px;
@@ -295,8 +289,12 @@
   color: var(--color-text-secondary);
 }
 
+/* This row's red (#D31737) is deliberately a different, punchier red than
+   the shared `--color-error` token (#e57373, used for actual error states
+   elsewhere) — exact value supplied by the user (2026-09-01), specific to
+   this "remove" action. */
 .contact-profile__row--danger .contact-profile__row-icon {
-  color: var(--color-error);
+  color: #d31737;
 }
 
 .contact-profile__row--accent .contact-profile__row-icon {
@@ -311,13 +309,16 @@
 }
 
 .contact-profile__row--danger .contact-profile__row-label {
-  color: var(--color-error);
+  color: #d31737;
 }
 
 .contact-profile__row--accent .contact-profile__row-label {
   color: var(--color-primary);
 }
 
+/* Soft tinted pills — font color solid, background is the same color at a
+   low opacity (exact values supplied by the user, 2026-09-01): neutral/white
+   8%, danger #D31737 8%, accent #6bfad6 (== --color-primary) 10%. */
 .contact-profile__row-btn {
   flex-shrink: 0;
   border: none;
@@ -325,17 +326,17 @@
   padding: 7px 14px;
   font-size: 12px;
   font-weight: 600;
-  background: var(--color-card-alt);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--color-text);
 }
 
 .contact-profile__row-btn--danger {
-  background: rgba(229, 115, 115, 0.14);
-  color: var(--color-error);
+  background: rgba(211, 23, 55, 0.08);
+  color: #d31737;
 }
 
 .contact-profile__row-btn--accent {
-  background: var(--color-primary-dark);
+  background: rgba(107, 250, 214, 0.1);
   color: var(--color-primary);
   /* The "Open chat"/"Start Chat" label on this row reads as too heavy at
      the shared 600 weight — kept normal specifically for this button. */
