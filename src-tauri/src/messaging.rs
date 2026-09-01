@@ -133,32 +133,6 @@ pub enum MessagingError {
     Alias(Box<crate::alias::AliasError>),
 }
 
-/// Appends a timestamped line to `%TEMP%\sealed-desktop-sync.log` — a
-/// terminal-free diagnostic trail for background-sync failures (alias
-/// handshake dispatch errors, in particular). Deliberately not routed
-/// through `app_dir`/`Session` (would need threading a new parameter
-/// through several call sites just for this): `std::env::temp_dir()` is
-/// always reachable with zero plumbing, and this is a debugging aid, not
-/// something the app depends on functioning.
-pub(crate) fn log_sync_diagnostic(msg: &str) {
-    use std::io::Write;
-    let path = std::env::temp_dir().join("sealed-desktop-sync.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "[{}] {}", now_unix_millis(), msg);
-    }
-}
-
-/// First 8 bytes of `bytes`, hex-encoded — a short, log-friendly
-/// fingerprint for comparing whether two secret byte strings are the same
-/// value across two points in the code (or, eventually, across two
-/// devices) without ever writing the full secret to disk. Not a
-/// cryptographic hash (doesn't need to be — this never leaves the local
-/// diagnostic log, and a truncated prefix is already astronomically
-/// unlikely to collide between genuinely different 32-byte secrets).
-pub(crate) fn hex_fingerprint(bytes: &[u8]) -> String {
-    bytes.iter().take(8).map(|b| format!("{b:02x}")).collect()
-}
-
 impl From<crate::alias::AliasError> for MessagingError {
     fn from(e: crate::alias::AliasError) -> Self {
         MessagingError::Alias(Box::new(e))
@@ -805,14 +779,6 @@ fn process_kem_handshakes(
     let my_address = &wallet.address;
     let mut hybrid_saved = 0i64;
 
-    // Temporary diagnostic (2026-08-31): this function had zero logging at
-    // all, unlike `sync_incoming_messages`'s equivalent loop — a live "1 new
-    // message found by Sync Now but nothing shows in the chat window" report
-    // (fresh contact, first message via the hybrid KEM+first-frame path,
-    // which only ever runs through *this* function) couldn't be diagnosed
-    // because nothing here left a trace. Remove once root-caused.
-    log_sync_diagnostic(&format!("process_kem_handshakes: scanning {} kem candidate(s)", candidates.len()));
-
     for msg in candidates {
         if msg.sender_address.is_empty() {
             continue;
@@ -888,19 +854,11 @@ fn process_kem_handshakes(
         )?;
 
         let Some((timestamp_ms, content)) = decode_hybrid_inner_envelope(&envelope_bytes) else {
-            log_sync_diagnostic(&format!(
-                "process_kem_handshakes: hybrid frame decrypted but inner envelope decode failed for {} (tx {})",
-                msg.sender_address, msg.account_pubkey
-            ));
             continue; // secret cached above; payload just couldn't be parsed
         };
         // (no `has_message` check here — already done at the top of the
         // loop, before anything in this branch could have saved it)
         let sender_username = hybrid_sender_usernames.get(&msg.sender_address).cloned().flatten();
-        log_sync_diagnostic(&format!(
-            "process_kem_handshakes: saving hybrid-first-frame message from {} (tx {}), sender_username={:?}",
-            msg.sender_address, msg.account_pubkey, sender_username
-        ));
         messages::save_message(
             conn,
             &DecryptedMessage {
@@ -935,13 +893,6 @@ fn sync_incoming_messages(
 
     let mut new_count = 0i64;
 
-    // Temporary diagnostic trail (2026-08-11) for a live, not-yet-root-caused
-    // report: an alias-chat accept reply never completing on the receiving
-    // side even after repeated Force Resync. Writes to
-    // `log_sync_diagnostic` (see its doc comment — `%TEMP%\sealed-desktop-sync.log`,
-    // no terminal needed to read it).
-    log_sync_diagnostic(&format!("sync_incoming_messages: scanning {} candidate(s)", candidates.len()));
-
     for msg in candidates {
         if messages::has_message(conn, &msg.account_pubkey)? {
             continue;
@@ -957,41 +908,11 @@ fn sync_incoming_messages(
             used_wallet_derived = is_for_me;
         }
         if !is_for_me {
-            // Temporary diagnostic (2026-08-31): a live report of a
-            // "regular"-sized (non-KEM-shaped) message from a specific
-            // sender never tag-matching at all, even across repeated Force
-            // Resyncs — mirrors the unresolved 2026-08-25 investigation
-            // with a different peer. Logging every failed tag-check would
-            // be enormous noise across a 1000+-candidate global scan, so
-            // this is scoped to one hardcoded sender wallet for this one
-            // debugging session. Remove once root-caused either way.
-            if msg.sender_address == "TDMIUA3ORYGBBDKXGCLFPYKZWN2GC5IDJMUTZ6UMUKEKC2FPPR7W7PGO5U" {
-                let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-                log_sync_diagnostic(&format!(
-                    "sync_incoming_messages: tag MISMATCH from {} (tx {}, ciphertext_len={}) | \
-                     msg.recipient_tag={} sender_encryption_pubkey={} | \
-                     my_view_private_key_derived_pub={} my_scan_pubkey={} my_encryption_pubkey={} wallet_derived_pub={}",
-                    msg.sender_address,
-                    msg.account_pubkey,
-                    msg.ciphertext.len(),
-                    hex(&msg.recipient_tag),
-                    hex(&msg.sender_encryption_pubkey),
-                    hex(&crate::crypto::x25519::public_key_from_seed(&sealed_keys.view_private_key)),
-                    hex(&sealed_keys.scan_pubkey),
-                    hex(&sealed_keys.encryption_pubkey),
-                    hex(&wallet_derived_pub),
-                ));
-            }
             continue;
         }
         let _ = wallet_derived_pub; // only the private half is needed for decryption below
-        log_sync_diagnostic(&format!(
-            "sync_incoming_messages: tag matched for candidate from {} (tx {}), used_wallet_derived={used_wallet_derived}",
-            msg.sender_address, msg.account_pubkey
-        ));
 
         let Some(combined) = unpad_message(&msg.ciphertext) else {
-            log_sync_diagnostic("sync_incoming_messages: unpad_message failed after tag match");
             continue;
         };
         let ciphertext = match split_ciphertexts(&combined) {
@@ -1015,41 +936,9 @@ fn sync_incoming_messages(
             Ok(d) => d,
             Err(_) => match crate::crypto::decrypt_hybrid(&ciphertext, &shared, None) {
                 Ok(d) => d,
-                Err(_) => {
-                    // Temporary diagnostic (2026-08-24, extended 2026-09-01
-                    // with the PQ pubkey hash + a cached-secret fingerprint)
-                    // for a live "decrypt never succeeds for this sender"
-                    // report — prints our OWN currently-active
-                    // encryption/scan/PQ public-key material (public, not
-                    // secret — safe to log; the "fingerprint" is only the
-                    // first 8 bytes of the actual shared secret, non-reversible
-                    // for logging purposes but enough to compare across runs)
-                    // so it can be diffed against what's published on-chain
-                    // for this wallet, to rule in/out a local key-derivation
-                    // bug vs. a stale key cached on the sender's end. Remove
-                    // once this is root-caused.
-                    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-                    let my_pq_pubkey_hash = {
-                        use sha2::{Digest, Sha256};
-                        hex(&Sha256::digest(&sealed_keys.pq_public_key))
-                    };
-                    log_sync_diagnostic(&format!(
-                        "sync_incoming_messages: decrypt_hybrid failed (both with and without cached pq_secret={}) for {} \
-                         | my_encryption_pubkey={} my_scan_pubkey={} my_pq_pubkey_hash={} sender_ephemeral_pubkey={} \
-                         cached_pq_secret_fingerprint={} used_wallet_derived={used_wallet_derived}",
-                        pq_secret.is_some(),
-                        msg.sender_address,
-                        hex(&sealed_keys.encryption_pubkey),
-                        hex(&sealed_keys.scan_pubkey),
-                        my_pq_pubkey_hash,
-                        hex(&msg.sender_encryption_pubkey),
-                        pq_secret.as_deref().map(|s| hex_fingerprint(s)).unwrap_or_else(|| "none".to_string()),
-                    ));
-                    continue;
-                }
+                Err(_) => continue,
             },
         };
-        log_sync_diagnostic(&format!("sync_incoming_messages: decrypted {} byte(s) from {}", decrypted.len(), msg.sender_address));
 
         // Alias-chat invite/accept envelopes (Phase 7h) are dispatched here,
         // BEFORE gzip-decompress: they're never gzip/JSON-wrapped in the
@@ -1065,8 +954,9 @@ fn sync_incoming_messages(
         // one bad/incompatible alias candidate silently blocked every other
         // message in the same sync from being processed too. Every other
         // per-candidate failure in this loop is handled by `continue`, never
-        // by bubbling up; these two calls broke that convention. Now logged
-        // and skipped, matching the rest of this function.
+        // by bubbling up; these two calls broke that convention. Now the
+        // error is surfaced via `eprintln!` and skipped, matching the rest
+        // of this function.
         //
         // **Third bug fixed 2026-08-11**: neither branch used to touch
         // `new_count` at all — a successfully-recorded incoming invite or a
@@ -1079,34 +969,18 @@ fn sync_incoming_messages(
         // the full chain. Now counted like any other real sync outcome.
         match crate::alias::invite_delivery::classify(&decrypted) {
             crate::alias::invite_delivery::IncomingAliasEnvelope::Invite => {
-                log_sync_diagnostic(&format!("sync_incoming_messages: classified as alias INVITE from {}", msg.sender_address));
                 match crate::alias::invite_delivery::handle_incoming_invite(conn, &msg.sender_address, &decrypted, msg.timestamp) {
-                    Ok(true) => {
-                        log_sync_diagnostic("sync_incoming_messages: alias invite recorded successfully");
-                        new_count += 1;
-                    }
-                    Ok(false) => log_sync_diagnostic("sync_incoming_messages: alias invite was already recorded (duplicate delivery)"),
-                    Err(e) => {
-                        let line = format!("[sync] failed to record incoming alias invite from {}: {e}", msg.sender_address);
-                        eprintln!("{line}");
-                        log_sync_diagnostic(&line);
-                    }
+                    Ok(true) => new_count += 1,
+                    Ok(false) => {}
+                    Err(e) => eprintln!("[sync] failed to record incoming alias invite from {}: {e}", msg.sender_address),
                 }
                 continue;
             }
             crate::alias::invite_delivery::IncomingAliasEnvelope::Accept => {
-                log_sync_diagnostic(&format!("sync_incoming_messages: classified as alias ACCEPT from {}", msg.sender_address));
                 match crate::alias::invite_delivery::handle_incoming_accept(conn, &decrypted, msg.timestamp) {
-                    Ok(true) => {
-                        log_sync_diagnostic("sync_incoming_messages: alias accept matched a pending invite and promoted a new contact");
-                        new_count += 1;
-                    }
-                    Ok(false) => log_sync_diagnostic("sync_incoming_messages: alias accept was a no-op (no match, or already established)"),
-                    Err(e) => {
-                        let line = format!("[sync] failed to complete incoming alias accept: {e}");
-                        eprintln!("{line}");
-                        log_sync_diagnostic(&line);
-                    }
+                    Ok(true) => new_count += 1,
+                    Ok(false) => {}
+                    Err(e) => eprintln!("[sync] failed to complete incoming alias accept: {e}"),
                 }
                 continue;
             }
@@ -1157,14 +1031,6 @@ fn sync_outgoing_messages(
 ) -> Result<i64, MessagingError> {
     let mut new_count = 0i64;
 
-    // Temporary diagnostic (2026-08-31): same reasoning as the equivalent
-    // addition to `process_kem_handshakes` — this loop had zero logging,
-    // so a self-copy (our own sent message, backfilled via sync) that gets
-    // saved under the wrong `recipient_wallet` (the "unknown" fallback
-    // below, if `parse_message_payload` can't parse the JSON) would be
-    // invisible in the UI with no trace of why. Remove once root-caused.
-    log_sync_diagnostic(&format!("sync_outgoing_messages: scanning {} self-copy candidate(s)", candidates.len()));
-
     for msg in candidates {
         if messages::has_message(conn, &msg.account_pubkey)? {
             continue;
@@ -1177,10 +1043,6 @@ fn sync_outgoing_messages(
         let Ok(decrypted) = crate::crypto::decrypt_hybrid(&self_ct, &shared, None) else { continue };
         let Ok(decompressed) = gzip_decompress(&decrypted) else { continue };
         let payload = parse_message_payload(&decompressed);
-        log_sync_diagnostic(&format!(
-            "sync_outgoing_messages: saving self-copy (tx {}), resolved recipient_wallet={:?}",
-            msg.account_pubkey, payload.recipient_wallet
-        ));
 
         messages::save_message(
             conn,

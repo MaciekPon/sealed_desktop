@@ -125,7 +125,10 @@ fn notify_new_messages(app_handle: &AppHandle) {
         Ok(handle) => {
             let app_handle = app_handle.clone();
             std::thread::spawn(move || {
-                handle.wait_for_response(move |response| {
+                // `ResponseHandler` requires `Fn(&NotificationResponse)`, not
+                // `Fn(NotificationResponse)` by value — borrow the parameter
+                // (match ergonomics let `matches!` see through the reference).
+                let _ = handle.wait_for_response(move |response: &notify_rust::NotificationResponse| {
                     if !matches!(response, notify_rust::NotificationResponse::Closed(_)) {
                         crate::tray::show_main_window(&app_handle);
                     }

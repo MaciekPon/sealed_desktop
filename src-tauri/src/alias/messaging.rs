@@ -93,11 +93,6 @@ pub async fn send_alias_message_network(
     let padded = crate::messaging::pad_message(&combined)?;
 
     let tx_id = chain_client.send_message(wallet, escrow, &recipient_tag, &ephemeral.public, &padded).await?;
-    crate::messaging::log_sync_diagnostic(&format!(
-        "send_alias_message_network: sent to contact {} as tx {tx_id} ({} plaintext byte(s))",
-        contact.contact_id,
-        plaintext.len()
-    ));
 
     Ok(SendAliasMessageOutcome {
         tx_id: tx_id.clone(),
@@ -123,16 +118,6 @@ pub fn apply_alias_send_result(conn: &Connection, outcome: &SendAliasMessageOutc
 /// newly-saved alias messages.
 pub fn apply_alias_sync_result(conn: &Connection, candidates: &[ChainMessage]) -> Result<i64, AliasError> {
     let contacts = super::contacts::get_all_alias_contacts(conn)?;
-    // Temporary diagnostic (2026-08-11) — see `messaging::log_sync_diagnostic`'s
-    // doc comment. This function had zero logging until now; added while
-    // live-debugging a report that alias-chat *messages* (as opposed to the
-    // invite/accept handshake, already diagnosed separately) never arrive
-    // in either direction between two established alias-chat parties.
-    crate::messaging::log_sync_diagnostic(&format!(
-        "apply_alias_sync_result: {} alias contact(s) held locally, scanning {} candidate(s)",
-        contacts.len(),
-        candidates.len()
-    ));
     if contacts.is_empty() {
         return Ok(0);
     }
@@ -142,43 +127,27 @@ pub fn apply_alias_sync_result(conn: &Connection, candidates: &[ChainMessage]) -
         if super::messages::has_alias_message(conn, &msg.account_pubkey)? {
             continue;
         }
-        let mut tag_matched_any_contact = false;
         for contact in &contacts {
             if !crate::crypto::check_recipient_tag(&msg.sender_encryption_pubkey, &msg.recipient_tag, &contact.my_scan_seed) {
                 continue;
             }
-            tag_matched_any_contact = true;
-            crate::messaging::log_sync_diagnostic(&format!(
-                "apply_alias_sync_result: tag matched contact {} for candidate from {} (tx {}), stored pq_shared_secret fingerprint={}",
-                contact.contact_id,
-                msg.sender_address,
-                msg.account_pubkey,
-                crate::messaging::hex_fingerprint(&contact.pq_shared_secret)
-            ));
 
             let Some(combined) = crate::messaging::unpad_message(&msg.ciphertext) else {
-                crate::messaging::log_sync_diagnostic("apply_alias_sync_result: unpad_message failed after tag match");
                 break;
             };
             // Always combine-wrapped on the wire (see this module's doc
             // comment) — split before decrypting, discard the empty self-ct.
             let Some((ciphertext, _self_ct)) = crate::messaging::split_ciphertexts(&combined) else {
-                crate::messaging::log_sync_diagnostic("apply_alias_sync_result: split_ciphertexts failed after unpad");
                 break;
             };
             let shared = crate::crypto::x25519::shared_secret_from_seed(&contact.my_enc_seed, &msg.sender_encryption_pubkey);
             let Ok(compressed) = crate::crypto::decrypt_hybrid(&ciphertext, &shared, Some(contact.pq_shared_secret.as_slice())) else {
-                crate::messaging::log_sync_diagnostic(
-                    "apply_alias_sync_result: decrypt_hybrid failed after tag match + correct split_ciphertexts framing",
-                );
                 break;
             };
             let Ok(raw) = crate::messaging::gzip_decompress(&compressed) else {
-                crate::messaging::log_sync_diagnostic("apply_alias_sync_result: gzip_decompress failed after successful decrypt");
                 break;
             };
             let Ok(payload) = serde_json::from_slice::<MessagePayload>(&raw) else {
-                crate::messaging::log_sync_diagnostic("apply_alias_sync_result: MessagePayload JSON parse failed after successful decompress");
                 break;
             };
 
@@ -192,15 +161,8 @@ pub fn apply_alias_sync_result(conn: &Connection, candidates: &[ChainMessage]) -
                     is_outgoing: false,
                 },
             )?;
-            crate::messaging::log_sync_diagnostic("apply_alias_sync_result: alias message saved successfully");
             saved += 1;
             break; // tag matched this contact — no need to try the rest
-        }
-        if !tag_matched_any_contact && !msg.sender_address.is_empty() {
-            crate::messaging::log_sync_diagnostic(&format!(
-                "apply_alias_sync_result: candidate from {} (tx {}) matched no alias contact's tag",
-                msg.sender_address, msg.account_pubkey
-            ));
         }
     }
     Ok(saved)

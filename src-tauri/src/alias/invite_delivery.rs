@@ -73,7 +73,7 @@ pub fn handle_incoming_invite(conn: &Connection, sender_wallet: &str, envelope_b
 /// messages), so `sync_incoming_messages`'s `has_message` dedup check never
 /// catches them: the *same* accept transaction gets re-fetched and
 /// re-processed on every single sync pass, forever, for the lifetime of
-/// the account (confirmed live via `log_sync_diagnostic` output — one
+/// the account (confirmed live via diagnostic logging at the time — one
 /// transaction reprocessed dozens of times over a few minutes). Once the
 /// matching pending invite is consumed on the first successful match, every
 /// later reprocessing attempt correctly falls into the "no match" branch
@@ -113,34 +113,10 @@ pub fn handle_incoming_accept(conn: &mut Connection, accept_bytes: &[u8], now: i
         .iter()
         .find(|p| envelope::hex_decode(&p.invite_ref).is_some_and(|r| r.len() >= 8 && r[..8] == accept.invite_ref_prefix[..]));
     let Some(pending) = pending else {
-        // Temporary diagnostic (2026-08-11) — see `messaging::log_sync_diagnostic`'s
-        // doc comment. Prints the received prefix against every locally-held
-        // pending invite's prefix, since a mismatch here (rather than a
-        // decrypt/classify failure earlier) is the leading suspect for a
-        // live "accept never completes" report.
-        let received_prefix_hex = envelope::hex_encode(&accept.invite_ref_prefix);
-        let local_prefixes: Vec<String> = all_pending.iter().map(|p| p.invite_ref.get(..16).unwrap_or(&p.invite_ref).to_string()).collect();
-        crate::messaging::log_sync_diagnostic(&format!(
-            "handle_incoming_accept: no matching pending invite for received prefix {received_prefix_hex} — {} pending invite(s) held locally with ref-prefixes {local_prefixes:?}",
-            all_pending.len()
-        ));
         return Ok(false);
     };
 
     let completed = onboarding::complete_from_accept_envelope(&pending.invite_ref, &pending.my_pq_sk, accept_bytes)?;
-    // Temporary diagnostic (2026-08-11) — see `messaging::log_sync_diagnostic`'s
-    // doc comment. Fingerprints the *creator's* freshly-decapsulated
-    // `pq_shared_secret` at the moment the handshake completes, so a later
-    // `apply_alias_sync_result` log line (fingerprinting the same contact's
-    // stored `pq_shared_secret` right before a failed message decrypt) can
-    // confirm whether the value is even stable across that gap, before
-    // assuming the mismatch is cross-platform (Rust vs Dart) rather than a
-    // local storage/read bug.
-    crate::messaging::log_sync_diagnostic(&format!(
-        "handle_incoming_accept: handshake completed for contact {}, pq_shared_secret fingerprint={}",
-        pending.invite_ref,
-        crate::messaging::hex_fingerprint(&completed.pq_shared_secret)
-    ));
     contacts::promote_creator_pending_to_contact(conn, pending, &completed, now)?;
     Ok(true)
 }
