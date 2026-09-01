@@ -128,6 +128,25 @@ pub fn run() {
             commands::alias::accept_incoming_invite,
             commands::alias::decline_incoming_invite,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            let _ = (&app_handle, &event); // avoid an unused-var warning on platforms where the block below compiles away
+            // **Bug fixed 2026-09-01**: the plain `.run(context)` call this
+            // replaced passes an empty no-op run-event callback internally
+            // — `Reopen` (fired when the user clicks the Dock icon while
+            // the app has no visible windows, i.e. exactly the
+            // minimize-to-tray state) was never handled at all, so on
+            // macOS there was no way back into a minimized app once the
+            // tray icon itself didn't get you there. Not verified locally
+            // (no Mac available in this project) — best-effort fix for a
+            // live report, matching the standard Tauri/AppKit pattern for
+            // this exact situation.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                if !has_visible_windows {
+                    tray::show_main_window(app_handle);
+                }
+            }
+        });
 }

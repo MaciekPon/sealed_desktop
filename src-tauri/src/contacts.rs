@@ -226,6 +226,34 @@ pub fn get_contact_keys(conn: &Connection, wallet_address: &str) -> rusqlite::Re
 /// if `update` is entirely empty or the wallet has no cached row yet,
 /// matching `saveContactKeys`'s "update-only" semantics.
 pub fn save_contact_keys(conn: &Connection, wallet_address: &str, update: &ContactKeysUpdate) -> rusqlite::Result<()> {
+    // **Bug fixed 2026-09-01**: this used to be a bare `UPDATE ... WHERE
+    // wallet_address = ?`, silently matching zero rows (no error — `UPDATE`
+    // against a nonexistent row just affects nothing) whenever this
+    // wallet had never been through `save_contact`'s full upsert first —
+    // e.g. two desktop accounts messaging each other with neither side
+    // ever using "Add to Contacts". A freshly-established PQ shared secret
+    // (from a hybrid-first-frame handshake) would then never actually
+    // persist: `get_contact_keys` on the very next send still found
+    // nothing cached, forcing *every single message* through a brand-new
+    // handshake forever — live-reproduced as a sender re-doing the
+    // handshake for every message to a desktop-only contact it had never
+    // explicitly added. `encryption_pubkey`/`scan_pubkey` are `NOT NULL`
+    // columns with no default, so a bare `INSERT ... (wallet_address)` on
+    // first-ever-contact would itself fail those constraints — fill them
+    // from this same update if present, else an empty placeholder BLOB
+    // (`get_contact_keys` already treats anything that doesn't parse as a
+    // 32-byte key as `None`, so this is exactly equivalent to "not known
+    // yet", not a fabricated key).
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts_cache (wallet_address, encryption_pubkey, scan_pubkey, created_at) \
+         VALUES (?1, ?2, ?3, strftime('%s', 'now'))",
+        params![
+            wallet_address,
+            update.encryption_pubkey.map(|k| k.to_vec()).unwrap_or_default(),
+            update.scan_pubkey.map(|k| k.to_vec()).unwrap_or_default(),
+        ],
+    )?;
+
     let mut sets = Vec::new();
     let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 

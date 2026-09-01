@@ -73,7 +73,9 @@ pub fn setup(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
-fn show_main_window(app: &AppHandle) {
+/// Also called from `sync::notify_new_messages` (Windows only, see its doc
+/// comment) so clicking the new-message toast brings the window back too.
+pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.set_focus();

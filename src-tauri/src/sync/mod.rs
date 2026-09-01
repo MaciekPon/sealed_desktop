@@ -20,10 +20,16 @@
 //! session-locking dance — see that module's doc comment for why every
 //! phase that both touches the db and awaits network calls needs its own
 //! `state.session` lock scope.
+//!
+//! Clicking the toast brings the window back (2026-09-01, Windows only —
+//! see `notify_new_messages`'s doc comment): particularly relevant now that
+//! "minimize to tray on close" (see `tray.rs`) can leave the window hidden
+//! when a notification arrives.
 
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
+#[cfg(not(target_os = "windows"))]
 use tauri_plugin_notification::NotificationExt;
 
 use crate::settings;
@@ -100,6 +106,37 @@ async fn tick(app_handle: &AppHandle) {
     }
 }
 
+/// On Windows, bypasses `tauri-plugin-notification` and builds the toast
+/// with `notify-rust` directly instead — the Tauri plugin's desktop backend
+/// only ever fire-and-forgets (`show()` -> `Result<()>`, no handle); its
+/// click/action support (`register_action_types`) is wired up for mobile
+/// only. `notify-rust`'s own Windows backend returns a `NotificationHandle`
+/// whose `wait_for_response` blocks until the toast is clicked or dismissed
+/// — spawned on its own OS thread (not the tokio runtime: it's a blocking
+/// `std::sync::mpsc` recv, not an async API) so a click can bring the
+/// window back via `tray::show_main_window`. Not attempted on macOS/Linux:
+/// `notify-rust`'s per-platform handle types aren't verified to share this
+/// same API shape there, and there's no way to test a macOS build locally
+/// in this project — left on the original Tauri-plugin path unchanged
+/// there, so nothing regresses on a platform this can't be verified against.
+#[cfg(target_os = "windows")]
+fn notify_new_messages(app_handle: &AppHandle) {
+    match notify_rust::Notification::new().summary(NOTIFICATION_TITLE).body(NOTIFICATION_BODY).show() {
+        Ok(handle) => {
+            let app_handle = app_handle.clone();
+            std::thread::spawn(move || {
+                handle.wait_for_response(move |response| {
+                    if !matches!(response, notify_rust::NotificationResponse::Closed(_)) {
+                        crate::tray::show_main_window(&app_handle);
+                    }
+                });
+            });
+        }
+        Err(e) => eprintln!("[sync] failed to show notification: {e}"),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
 fn notify_new_messages(app_handle: &AppHandle) {
     if let Err(e) = app_handle.notification().builder().title(NOTIFICATION_TITLE).body(NOTIFICATION_BODY).show() {
         eprintln!("[sync] failed to show notification: {e}");

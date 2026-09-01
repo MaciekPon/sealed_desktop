@@ -1,6 +1,6 @@
 [package]
 name = "sealed-desktop"
-version = "0.2.3"
+version = "0.2.4"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -24,6 +24,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-stronghold = "2.3.1"
 tauri-plugin-notification = "2.3.3"
+# Direct dep (already pulled transitively by tauri-plugin-notification at
+# this exact version) so `sync/mod.rs` can build/show a Windows toast via
+# its own lower-level API and get a click callback — `tauri-plugin-notification`
+# only wires up click/action handling on mobile, not desktop. See that
+# module's doc comment.
+notify-rust = "4.18.0"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
