@@ -1016,23 +1016,34 @@ fn sync_incoming_messages(
             Err(_) => match crate::crypto::decrypt_hybrid(&ciphertext, &shared, None) {
                 Ok(d) => d,
                 Err(_) => {
-                    // Temporary diagnostic (2026-08-24) for a live "decrypt
-                    // never succeeds for this sender" report — prints our
-                    // OWN currently-active encryption/scan pubkeys in full
-                    // (public keys, not secrets — safe to log) so they can
-                    // be diffed byte-for-byte against what's actually
-                    // published on-chain for this wallet, to rule in/out a
-                    // local key-derivation bug vs. a stale key cached on
-                    // the sender's end. Remove once this is root-caused.
+                    // Temporary diagnostic (2026-08-24, extended 2026-09-01
+                    // with the PQ pubkey hash + a cached-secret fingerprint)
+                    // for a live "decrypt never succeeds for this sender"
+                    // report — prints our OWN currently-active
+                    // encryption/scan/PQ public-key material (public, not
+                    // secret — safe to log; the "fingerprint" is only the
+                    // first 8 bytes of the actual shared secret, non-reversible
+                    // for logging purposes but enough to compare across runs)
+                    // so it can be diffed against what's published on-chain
+                    // for this wallet, to rule in/out a local key-derivation
+                    // bug vs. a stale key cached on the sender's end. Remove
+                    // once this is root-caused.
                     let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+                    let my_pq_pubkey_hash = {
+                        use sha2::{Digest, Sha256};
+                        hex(&Sha256::digest(&sealed_keys.pq_public_key))
+                    };
                     log_sync_diagnostic(&format!(
                         "sync_incoming_messages: decrypt_hybrid failed (both with and without cached pq_secret={}) for {} \
-                         | my_encryption_pubkey={} my_scan_pubkey={} sender_ephemeral_pubkey={} used_wallet_derived={used_wallet_derived}",
+                         | my_encryption_pubkey={} my_scan_pubkey={} my_pq_pubkey_hash={} sender_ephemeral_pubkey={} \
+                         cached_pq_secret_fingerprint={} used_wallet_derived={used_wallet_derived}",
                         pq_secret.is_some(),
                         msg.sender_address,
                         hex(&sealed_keys.encryption_pubkey),
                         hex(&sealed_keys.scan_pubkey),
+                        my_pq_pubkey_hash,
                         hex(&msg.sender_encryption_pubkey),
+                        pq_secret.as_deref().map(|s| hex_fingerprint(s)).unwrap_or_else(|| "none".to_string()),
                     ));
                     continue;
                 }
