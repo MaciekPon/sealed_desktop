@@ -417,6 +417,7 @@ pub async fn send_message_network(
     let resolved = crate::commands::contacts::resolve_contact_keys_impl(chain_client, indexer_client, request.recipient_wallet, cached)
         .await
         .map_err(MessagingError::ContactResolve)?;
+    let resolved = crate::commands::contacts::refresh_if_key_rotated(chain_client, indexer_client, request.recipient_wallet, resolved).await;
 
     let recipient_encryption_pubkey = resolved.encryption_pubkey.ok_or(MessagingError::RecipientKeysUnavailable)?;
     let recipient_scan_pubkey = resolved.scan_pubkey.ok_or(MessagingError::RecipientKeysUnavailable)?;
@@ -609,6 +610,7 @@ pub async fn send_raw_bytes_network(
     let resolved = crate::commands::contacts::resolve_contact_keys_impl(chain_client, indexer_client, recipient_wallet, cached)
         .await
         .map_err(MessagingError::ContactResolve)?;
+    let resolved = crate::commands::contacts::refresh_if_key_rotated(chain_client, indexer_client, recipient_wallet, resolved).await;
 
     let recipient_encryption_pubkey = resolved.encryption_pubkey.ok_or(MessagingError::RecipientKeysUnavailable)?;
     let recipient_scan_pubkey = resolved.scan_pubkey.ok_or(MessagingError::RecipientKeysUnavailable)?;
@@ -749,16 +751,33 @@ pub async fn fetch_sync_data(
 }
 
 /// Sync-only half: KEM handshake processing, then incoming, then outgoing
-/// messages, over already-fetched chain data — no `.await` anywhere in
-/// this function or its callees. Returns the number of newly-cached
-/// messages. Mirrors `MessageService._syncMessages`/`_syncViaBlockchain`
-/// (the overlapping-sync guard, `_activeSync`, is Dart-side call-site
-/// concurrency control specific to a long-lived service object; Tauri
-/// commands are invoked one at a time from the frontend, so it isn't
-/// reproduced here).
-pub fn apply_sync_result(conn: &mut Connection, wallet: &AlgorandWallet, sealed_keys: &SealedKeys, fetch: &SyncFetchResult) -> Result<i64, MessagingError> {
+/// messages, over already-fetched chain data. Returns the number of
+/// newly-cached messages. Mirrors `MessageService._syncMessages`/
+/// `_syncViaBlockchain` (the overlapping-sync guard, `_activeSync`, is
+/// Dart-side call-site concurrency control specific to a long-lived
+/// service object; Tauri commands are invoked one at a time from the
+/// frontend, so it isn't reproduced here).
+///
+/// **`async` since 2026-09-29** (previously "no `.await` anywhere in this
+/// function or its callees"): `sync_incoming_messages`'s initiator-recovery
+/// path needs a chain/indexer round-trip to re-resolve a peer's PQ pubkey
+/// when the local cache was wiped — see its doc comment. Only narrow,
+/// individually-`Send` refs (`chain_client`, `indexer_client`, `wallet`,
+/// `sealed_keys`, `&mut Connection`) are threaded through, never `&Session`/
+/// a `MutexGuard` itself, matching every other async fn in this module
+/// (`send_message_network` et al.) — see this module's own doc comment for
+/// why that distinction is what actually keeps a `#[tauri::command]`'s
+/// future `Send`.
+pub async fn apply_sync_result(
+    conn: &mut Connection,
+    chain_client: &SealedChainClient,
+    indexer_client: &IndexerClient,
+    wallet: &AlgorandWallet,
+    sealed_keys: &SealedKeys,
+    fetch: &SyncFetchResult,
+) -> Result<i64, MessagingError> {
     let hybrid = process_kem_handshakes(conn, wallet, sealed_keys, &fetch.kem_candidates, &fetch.hybrid_sender_usernames)?;
-    let incoming = sync_incoming_messages(conn, wallet, sealed_keys, &fetch.incoming_candidates)?;
+    let incoming = sync_incoming_messages(conn, chain_client, indexer_client, wallet, sealed_keys, &fetch.incoming_candidates).await?;
     let outgoing = sync_outgoing_messages(conn, wallet, sealed_keys, &fetch.outgoing_candidates)?;
 
     sync_state::update_last_sync_time_millis(conn, now_unix_millis())?;
@@ -879,8 +898,43 @@ fn process_kem_handshakes(
     Ok(hybrid_saved)
 }
 
-fn sync_incoming_messages(
+/// Re-derive the KEM shared secret WE encapsulated to `peer_wallet` when we
+/// initiated the chat — deterministic re-encapsulation to the peer's PQ
+/// pubkey (same coins our send used, see `crypto::kdf::derive_kem_encaps_nonce`).
+/// `None` if the peer has no resolvable PQ pubkey (nothing cached, and chain/
+/// indexer resolution — same lazy-resolve `resolve_contact_keys_impl` the
+/// send paths use — came up empty either) or any step fails. Best-effort:
+/// the caller MUST AEAD-verify the result before trusting/caching it — a
+/// peer-initiated chat or a rotated peer PQ key both yield a well-formed
+/// but non-matching secret here.
+///
+/// Takes `&mut Connection`, not `&Connection`, on purpose: `rusqlite::
+/// Connection` has interior mutability (an internal statement-cache
+/// `RefCell`), so it's `Send` but never `Sync` — a plain `&Connection` held
+/// across this function's `.await` would make the whole future `!Send` and
+/// fail to compile as a Tauri command. `&mut Connection` only needs
+/// `Connection: Send`, which does hold. The only DB read here
+/// (`get_contact_keys`) happens before the `.await`, so nothing but the
+/// bare reference itself needs to survive the suspension point.
+async fn resolve_and_reencapsulate(
     conn: &mut Connection,
+    chain_client: &SealedChainClient,
+    indexer_client: &IndexerClient,
+    peer_wallet: &str,
+    sealed_keys: &SealedKeys,
+) -> Option<Vec<u8>> {
+    let cached = contacts::get_contact_keys(conn, peer_wallet).ok()?;
+    let resolved = crate::commands::contacts::resolve_contact_keys_impl(chain_client, indexer_client, peer_wallet, cached).await.ok()?;
+    let peer_pq_pub = resolved.pq_public_key?;
+    let nonce = crate::crypto::kdf::derive_kem_encaps_nonce(&sealed_keys.pq_master_seed, &peer_pq_pub);
+    let result = crate::crypto::pq::kem_encapsulate_with_nonce(&peer_pq_pub, &nonce).ok()?;
+    Some(result.shared_secret.to_vec())
+}
+
+async fn sync_incoming_messages(
+    conn: &mut Connection,
+    chain_client: &SealedChainClient,
+    indexer_client: &IndexerClient,
     wallet: &AlgorandWallet,
     sealed_keys: &SealedKeys,
     candidates: &[crate::chain::client::ChainMessage],
@@ -934,10 +988,47 @@ fn sync_incoming_messages(
         // even though we have a stale cached shared secret for them.
         let decrypted = match crate::crypto::decrypt_hybrid(&ciphertext, &shared, pq_secret.as_deref()) {
             Ok(d) => d,
-            Err(_) => match crate::crypto::decrypt_hybrid(&ciphertext, &shared, None) {
-                Ok(d) => d,
-                Err(_) => continue,
-            },
+            Err(_) => {
+                // Initiator recovery: if we have NO cached PQ secret at all
+                // (as opposed to a wrong one), we might be the one who
+                // originally initiated this chat — encapsulated to the
+                // sender's PQ pubkey — and simply lost the cached secret
+                // (e.g. "Log out & delete your data" then restore from the
+                // same mnemonic). Re-derive the exact same deterministic
+                // encapsulation and retry once; only trusted if the AEAD
+                // tag actually verifies on the retried decrypt — a
+                // peer-initiated chat or a rotated peer PQ key both yield a
+                // well-formed but non-matching secret here, which
+                // `decrypt_hybrid` safely rejects. Mirrors
+                // `MessageSync._reEncapsulateSecret`.
+                let recovered = if pq_secret.is_none() {
+                    match resolve_and_reencapsulate(conn, chain_client, indexer_client, &msg.sender_address, sealed_keys).await {
+                        Some(reencap_secret) => {
+                            crate::crypto::decrypt_hybrid(&ciphertext, &shared, Some(&reencap_secret)).ok().map(|d| (d, reencap_secret))
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+
+                match recovered {
+                    Some((d, reencap_secret)) => {
+                        // Best-effort cache write — a DB hiccup must not
+                        // discard a message we already decrypted.
+                        let _ = contacts::save_contact_keys(
+                            conn,
+                            &msg.sender_address,
+                            &ContactKeysUpdate { pq_shared_secret: Some(reencap_secret), ..Default::default() },
+                        );
+                        d
+                    }
+                    None => match crate::crypto::decrypt_hybrid(&ciphertext, &shared, None) {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    },
+                }
+            }
         };
 
         // Alias-chat invite/accept envelopes (Phase 7h) are dispatched here,
@@ -1121,8 +1212,15 @@ pub fn prepare_force_resync(conn: &Connection) -> Result<(), MessagingError> {
 /// read (a force-resync is a deliberate full reload, not a "catch up on
 /// unread" — matches `MessageService.forceResync` calling
 /// `markAllAsRead()` at the end).
-pub fn finalize_force_resync(conn: &mut Connection, wallet: &AlgorandWallet, sealed_keys: &SealedKeys, fetch: &SyncFetchResult) -> Result<i64, MessagingError> {
-    let count = apply_sync_result(conn, wallet, sealed_keys, fetch)?;
+pub async fn finalize_force_resync(
+    conn: &mut Connection,
+    chain_client: &SealedChainClient,
+    indexer_client: &IndexerClient,
+    wallet: &AlgorandWallet,
+    sealed_keys: &SealedKeys,
+    fetch: &SyncFetchResult,
+) -> Result<i64, MessagingError> {
+    let count = apply_sync_result(conn, chain_client, indexer_client, wallet, sealed_keys, fetch).await?;
     messages::mark_all_as_read(conn)?;
     Ok(count)
 }

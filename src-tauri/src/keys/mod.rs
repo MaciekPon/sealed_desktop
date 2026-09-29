@@ -40,6 +40,15 @@ pub struct SealedKeys {
     pub view_private_key: [u8; 32],
     pub pq_public_key: Vec<u8>,
     pub pq_private_key: Vec<u8>,
+    /// The intermediate 64-byte HKDF hop over the normalized mnemonic text
+    /// (`derive_sealed_keys`'s step 4, before the second `PQ_KEM_INFO` hop
+    /// that produces the actual ML-KEM keygen seed) — kept here so a
+    /// deterministic KEM re-encapsulation nonce can be derived later
+    /// without re-deriving from the wallet. See
+    /// `crypto::kdf::derive_kem_encaps_nonce`'s doc comment for why this
+    /// exists: recovering a chat we initiated after a logout/restore wipes
+    /// the local `pq_shared_secret` cache.
+    pub pq_master_seed: [u8; 64],
 }
 
 /// `trim + lowercase + collapse internal whitespace to single spaces` —
@@ -106,6 +115,7 @@ pub fn derive_sealed_keys(wallet: &AlgorandWallet) -> Result<SealedKeys, CryptoE
         view_private_key: view_seed,
         pq_public_key: pq_keys.public_key.to_vec(),
         pq_private_key: pq_keys.private_key.to_vec(),
+        pq_master_seed,
     })
 }
 

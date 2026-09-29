@@ -156,7 +156,9 @@ pub async fn sync_messages(state: State<'_, AppState>, full_sync: bool) -> Resul
     // (`alias::contacts::promote_creator_pending_to_contact`).
     let mut session_guard = state.session.lock().await;
     let session = session_guard.as_mut().ok_or("not unlocked")?;
-    let count = messaging::apply_sync_result(session.db.connection_mut(), &session.wallet, &session.sealed_keys, &fetch).map_err(|e| e.to_string())?;
+    let count = messaging::apply_sync_result(session.db.connection_mut(), &session.chain_client, &session.indexer_client, &session.wallet, &session.sealed_keys, &fetch)
+        .await
+        .map_err(|e| e.to_string())?;
     let alias_count =
         crate::alias::messaging::apply_alias_sync_result(session.db.connection(), fetch.incoming_candidates()).map_err(|e| e.to_string())?;
     session.db.save(&session.dek).map_err(|e| e.to_string())?;
@@ -186,8 +188,16 @@ pub async fn force_resync(state: State<'_, AppState>) -> Result<i64, String> {
     let mut session_guard = state.session.lock().await;
     let session = session_guard.as_mut().ok_or("not unlocked")?;
     messaging::prepare_force_resync(session.db.connection()).map_err(|e| e.to_string())?;
-    let count =
-        messaging::finalize_force_resync(session.db.connection_mut(), &session.wallet, &session.sealed_keys, &fetch).map_err(|e| e.to_string())?;
+    let count = messaging::finalize_force_resync(
+        session.db.connection_mut(),
+        &session.chain_client,
+        &session.indexer_client,
+        &session.wallet,
+        &session.sealed_keys,
+        &fetch,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     let alias_count =
         crate::alias::messaging::apply_alias_sync_result(session.db.connection(), fetch.incoming_candidates()).map_err(|e| e.to_string())?;
     session.db.save(&session.dek).map_err(|e| e.to_string())?;

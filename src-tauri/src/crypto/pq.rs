@@ -91,6 +91,32 @@ pub fn kem_encapsulate(recipient_pq_pubkey: &[u8]) -> CryptoResult<KemResult> {
     })
 }
 
+/// Deterministic variant of [`kem_encapsulate`] — same encapsulation
+/// against `recipient_pq_pubkey`, but with `pqc_kyber`'s "coins" fixed to
+/// `nonce` instead of drawn from the system RNG, so the same
+/// `(recipient_pq_pubkey, nonce)` pair always reproduces the identical
+/// `(ciphertext, shared_secret)`. See `crypto::kdf::derive_kem_encaps_nonce`
+/// for how `nonce` is derived and why (KEM-secret recovery after a
+/// logout/restore) — this function is only ever called with that nonce.
+pub fn kem_encapsulate_with_nonce(recipient_pq_pubkey: &[u8], nonce: &[u8; 32]) -> CryptoResult<KemResult> {
+    if recipient_pq_pubkey.len() != PQ_PUBLIC_KEY_LEN {
+        return Err(CryptoError::Validation(format!(
+            "recipientPqPubkey must be {PQ_PUBLIC_KEY_LEN} bytes, got {}",
+            recipient_pq_pubkey.len()
+        )));
+    }
+    let mut ct = [0u8; PQ_CIPHERTEXT_LEN];
+    let mut ss = [0u8; PQ_SHARED_SECRET_LEN];
+    // Unused when a seed is supplied, but required by the function signature.
+    let mut rng = OsRng08;
+    crypto_kem_enc(&mut ct, &mut ss, recipient_pq_pubkey, &mut rng, Some(nonce))
+        .map_err(|e| CryptoError::Operation(format!("deterministic KEM encapsulation failed: {e:?}")))?;
+    Ok(KemResult {
+        ciphertext: ct,
+        shared_secret: ss,
+    })
+}
+
 /// Perform ML-KEM-512 decapsulation using our own PQ private key. Mirrors
 /// `CryptoService.kemDecapsulate`. Never fails cryptographically (per the FO
 /// transform's implicit-rejection design) — only length validation can error.
@@ -126,6 +152,28 @@ mod tests {
         let b = generate_pq_keypair_from_seed(&seed).unwrap();
         assert_eq!(a.public_key, b.public_key);
         assert_eq!(a.private_key, b.private_key);
+    }
+
+    #[test]
+    fn encapsulate_with_nonce_is_deterministic_and_round_trips() {
+        let seed = [9u8; PQ_SEED_LEN];
+        let keys = generate_pq_keypair_from_seed(&seed).unwrap();
+        let nonce = [3u8; 32];
+
+        let a = kem_encapsulate_with_nonce(&keys.public_key, &nonce).unwrap();
+        let b = kem_encapsulate_with_nonce(&keys.public_key, &nonce).unwrap();
+        assert_eq!(a.ciphertext, b.ciphertext);
+        assert_eq!(a.shared_secret, b.shared_secret);
+
+        let decapsulated = kem_decapsulate(&a.ciphertext, &keys.private_key).unwrap();
+        assert_eq!(a.shared_secret, decapsulated);
+
+        // A different nonce against the same recipient must yield a
+        // different ciphertext/secret — this is what keeps the recovery
+        // path (see `crypto::kdf::derive_kem_encaps_nonce`) from reusing
+        // coins across distinct peers.
+        let other = kem_encapsulate_with_nonce(&keys.public_key, &[4u8; 32]).unwrap();
+        assert_ne!(a.ciphertext, other.ciphertext);
     }
 
     #[test]
