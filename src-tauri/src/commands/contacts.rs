@@ -355,6 +355,63 @@ pub(crate) async fn resolve_contact_keys_impl(
     })
 }
 
+/// Detects a rotated on-chain key for `wallet_address` and, if found, drops
+/// the stale cache and returns freshly-resolved keys instead.
+///
+/// **Gap fixed 2026-09-29**: `resolve_contact_keys_impl` above only ever
+/// touches the chain when the cache looks incomplete — once a contact's
+/// keys, username, and bio are all cached, it returns the cache forever,
+/// with no way to ever notice a later key rotation (reinstall, key reset,
+/// restore-from-mnemonic on the peer's end). `message_sender.dart`'s
+/// `sendMessage`/`sendMessageBytes` avoid this by running an unconditional
+/// freshness check — a fresh `getUserByWallet` compared against the cached
+/// keys — before every single send, regardless of cache completeness; this
+/// mirrors that, called from the two send paths in `messaging.rs` right
+/// after `resolve_contact_keys_impl`, never from the plain profile-resolve
+/// path (matching mobile: only sends pay for this extra round-trip).
+/// Best-effort — any chain-read failure here is swallowed and `resolved` is
+/// returned unchanged; this must never block a send.
+pub(crate) async fn refresh_if_key_rotated(
+    chain_client: &crate::chain::client::SealedChainClient,
+    indexer_client: &crate::indexer::client::IndexerClient,
+    wallet_address: &str,
+    resolved: ContactKeys,
+) -> ContactKeys {
+    let Ok(Some(fresh)) = chain_client.get_user_by_wallet(wallet_address).await else {
+        return resolved;
+    };
+
+    let pq_rotated = match (&fresh.pq_pubkey_hash, &resolved.pq_public_key) {
+        (Some(anchor), Some(cached_pq)) => {
+            let cached_hash: [u8; 32] = Sha256::digest(cached_pq).into();
+            !crate::crypto::constant_time_equals(anchor, &cached_hash)
+        }
+        _ => false,
+    };
+    let classical_rotated =
+        resolved.encryption_pubkey != Some(fresh.encryption_pubkey) || resolved.scan_pubkey != Some(fresh.scan_pubkey);
+
+    if !pq_rotated && !classical_rotated {
+        return resolved;
+    }
+
+    // Drop everything derived from the old keys and re-resolve from
+    // scratch against the fresh on-chain profile — mirrors
+    // `invalidatePqCache` + re-fetch in the Dart source.
+    let refreshed_pq = match &fresh.pq_pubkey_hash {
+        Some(anchor) => fetch_and_verify_pq_pubkey(indexer_client, wallet_address, anchor).await,
+        None => None,
+    };
+    ContactKeys {
+        pq_public_key: refreshed_pq,
+        pq_shared_secret: None,
+        encryption_pubkey: Some(fresh.encryption_pubkey),
+        scan_pubkey: Some(fresh.scan_pubkey),
+        username: resolved.username,
+        bio: resolved.bio,
+    }
+}
+
 /// Resolution order: on-chain published keys (verifying the PQ pubkey
 /// against its on-chain hash anchor via the indexer, if any), then a
 /// classical-only fallback derived from the Ed25519 wallet pubkey for

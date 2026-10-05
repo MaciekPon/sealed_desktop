@@ -93,6 +93,22 @@ pub fn has_message(conn: &Connection, tx_signature: &str) -> rusqlite::Result<bo
     .map(|r| r.is_some())
 }
 
+/// Unix milliseconds when this local DB was created (fresh account/restore),
+/// or 0 for a DB created before this column existed. Mirrors
+/// `MessageRepository.getInstallEpoch` — used to gate resurfacing alias
+/// invites whose on-chain timestamp predates this install (see
+/// `alias::invite_delivery::handle_incoming_invite`): after a reinstall or
+/// restore, alias keys are wiped, so re-accepting a pre-install invite would
+/// fork the channel with no way to recover history. `0` intentionally means
+/// "no gate" (grandfathers in any DB from before this row existed), never
+/// "epoch zero" — never backfilled for existing installs on schema upgrade,
+/// same reasoning as the Dart source's own migration-predates-this comment.
+pub fn install_epoch_millis(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("SELECT completed_at FROM migration_state WHERE key = 'install_epoch'", [], |row| row.get(0))
+        .optional()
+        .map(|v: Option<i64>| v.unwrap_or(0))
+}
+
 pub fn get_conversation_messages(conn: &Connection, wallet_a: &str, wallet_b: &str) -> rusqlite::Result<Vec<DecryptedMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, sender_wallet, sender_username, recipient_wallet, recipient_username, content, timestamp, is_outgoing, on_chain_pubkey \

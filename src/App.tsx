@@ -3,6 +3,7 @@ import { useSessionStore } from "./stores/sessionStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { AuthFlow } from "./features/auth/AuthFlow";
 import { LockScreen } from "./features/auth/LockScreen";
+import { Splash } from "./features/auth/Splash";
 import { MainLayout } from "./features/layout/MainLayout";
 import { useMessagesUpdatedListener } from "./hooks/useMessagesUpdatedListener";
 import "./styles/theme.css";
@@ -31,11 +32,7 @@ function App() {
   }, [status, updateChecked, checkForUpdate]);
 
   if (status === "unknown") {
-    return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)" }}>
-        Loading…
-      </div>
-    );
+    return <Splash />;
   }
 
   if (status === "noAccount") return <AuthFlow />;

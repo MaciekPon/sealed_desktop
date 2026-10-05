@@ -31,10 +31,29 @@ jobs:
           # binary so both Apple Silicon and Intel testers can run it.
           - platform: macos-latest
             args: "--target universal-apple-darwin"
+          # AppImage is the primary Linux target — it's the only Linux
+          # bundle format `@tauri-apps/plugin-updater` can self-update (.deb
+          # is left to the system package manager instead), matching the
+          # .exe/.dmg updater story on the other two platforms.
+          # `bundle.targets: "all"` in tauri.conf.json still also produces a
+          # .deb alongside it for anyone who'd rather install it that way.
+          # Pinned to 22.04, not `ubuntu-latest` (currently 24.04): an
+          # AppImage links against the build machine's glibc, so building on
+          # a newer Ubuntu bakes in a glibc floor that refuses to run on
+          # older distros — the whole point of AppImage is to be portable,
+          # so build on the oldest still-supported LTS runner available.
+          - platform: ubuntu-22.04
+            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

@@ -53,7 +53,16 @@ pub fn run() {
 
             app.manage(AppState::new(app_dir));
             sync::spawn(app.handle().clone());
-            tray::setup(app)?;
+            // WSLg's virtual desktop has no StatusNotifierWatcher/tray host —
+            // `TrayIconBuilder::build()` blocks forever waiting for one to
+            // register over D-Bus, so the whole `.setup()` closure (and with
+            // it, the main window) never completes under `wsl -d Ubuntu`. Real
+            // Windows/macOS/Linux-desktop trays are unaffected; this is a
+            // narrow, opt-in escape hatch for WSL-only dev testing, not a
+            // behavior change for any real user.
+            if std::env::var_os("SEALED_DISABLE_TRAY").is_none() {
+                tray::setup(app)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -62,6 +71,7 @@ pub fn run() {
             commands::auth::get_account_info,
             commands::auth::create_account,
             commands::auth::restore_account,
+            commands::auth::preview_restore_credits,
             commands::auth::unlock_account,
             commands::auth::lock_account,
             commands::auth::change_pin,

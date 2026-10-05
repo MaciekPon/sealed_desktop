@@ -15,7 +15,9 @@
 use base64::Engine;
 use tauri::State;
 
+use crate::chain::client::SealedChainClient;
 use crate::chain::wallet::{AlgorandWallet, WalletError};
+use crate::constants;
 use crate::db::Db;
 use crate::dek::{DekError, Vault};
 use crate::keys::{derive_sealed_keys, SealedKeys};
@@ -111,6 +113,25 @@ pub async fn create_account(state: State<'_, AppState>, pin: String) -> Result<N
 #[tauri::command]
 pub async fn restore_account(state: State<'_, AppState>, pin: String, mnemonic: String) -> Result<NewAccountInfo, String> {
     restore_account_impl(&state, &pin, &mnemonic).await
+}
+
+/// Read-only preview of a candidate restore mnemonic's on-chain credit
+/// balance, called *before* `restore_account` ever commits anything to
+/// disk — mirrors mobile's `MnemonicAccountScreen._confirmIfNoCredits`
+/// ("this wallet has 0 credits, are you sure it's yours?"), but checks
+/// first instead of after: unlike mobile, `AlgorandWallet::restore` here is
+/// a pure in-memory derivation and `SealedChainClient` needs no live
+/// session, so nothing is ever persisted if the user cancels — no need to
+/// accept mobile's "already too late to undo" ordering. Takes no
+/// `AppState`/session on purpose. Errors (bad mnemonic, network failure)
+/// are the caller's decision to handle — mobile treats an unreachable chain
+/// as "don't block restore on a network hiccup", not a hard failure.
+#[tauri::command]
+pub async fn preview_restore_credits(mnemonic: String) -> Result<u64, String> {
+    let wallet = AlgorandWallet::restore(&mnemonic).map_err(wallet_err)?;
+    let chain_client =
+        SealedChainClient::new(constants::SEALED_APP_ID, constants::ALGO_ALGOD_TARGET_URL, constants::ALGO_INDEXER_TARGET_URL);
+    chain_client.get_credits(&wallet, &wallet.address).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

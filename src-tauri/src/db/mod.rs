@@ -199,9 +199,10 @@ fn create_schema_v1(conn: &Connection) -> DbResult<()> {
         CREATE INDEX idx_contacts_username ON contacts_cache(username);
 
         -- ================================================================
-        -- MIGRATION STATE TABLE (kept for schema parity; mobile uses this
-        -- to track its legacy-app reconcile step, which has no desktop
-        -- equivalent — expected to stay empty here)
+        -- MIGRATION STATE TABLE (mostly kept for schema parity — mobile
+        -- also uses this for its legacy-app reconcile step, which has no
+        -- desktop equivalent — but the 'install_epoch' row below is real
+        -- and read by `messages::install_epoch_millis`.)
         -- ================================================================
         CREATE TABLE migration_state (
             key TEXT PRIMARY KEY,
@@ -210,6 +211,9 @@ fn create_schema_v1(conn: &Connection) -> DbResult<()> {
             rows_touched INTEGER,
             notes TEXT
         );
+
+        INSERT INTO migration_state (key, completed_at)
+        VALUES ('install_epoch', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
         "#,
     )?;
     Ok(())

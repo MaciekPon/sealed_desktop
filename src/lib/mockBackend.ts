@@ -219,6 +219,10 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       ensureDemoData();
       return { walletAddress: state.walletAddress, mnemonic: state.mnemonic } as T;
     }
+    case "preview_restore_credits":
+      // Mock always has credits — the "no credits found" warning is a
+      // real-chain edge case with nothing meaningful to simulate here.
+      return 5 as T;
     case "unlock_account": {
       state.unlocked = true;
       ensureDemoData();

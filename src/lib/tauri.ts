@@ -44,6 +44,8 @@ export const auth = {
   getAccountInfo: () => invoke<AccountInfo | null>("get_account_info"),
   createAccount: (pin: string) => invoke<NewAccountInfo>("create_account", { pin }),
   restoreAccount: (pin: string, mnemonic: string) => invoke<NewAccountInfo>("restore_account", { pin, mnemonic }),
+  /** Read-only on-chain credit check for a candidate restore mnemonic — nothing is persisted. See the Rust doc comment. */
+  previewRestoreCredits: (mnemonic: string) => invoke<number>("preview_restore_credits", { mnemonic }),
   unlockAccount: (pin: string) => invoke<UnlockOutcome>("unlock_account", { pin }),
   lockAccount: () => invoke<void>("lock_account"),
   changePin: (oldPin: string, newPin: string) => invoke<void>("change_pin", { oldPin, newPin }),

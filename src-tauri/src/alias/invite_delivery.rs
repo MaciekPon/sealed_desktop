@@ -49,6 +49,19 @@ pub fn classify(decrypted: &[u8]) -> IncomingAliasEnvelope {
 /// doc comment for why callers need this instead of always treating the
 /// call as "something changed".
 pub fn handle_incoming_invite(conn: &Connection, sender_wallet: &str, envelope_bytes: &[u8], received_at: i64) -> Result<bool, AliasError> {
+    // **Gap fixed 2026-09-29**: don't resurface invites that predate this
+    // install — mirrors `message_sync.dart`'s `_handleInviteEnvelope` gate.
+    // After a reinstall/restore, alias keys are wiped, so accepting an
+    // invite sent before that would fork the channel with no way to
+    // recover history. `received_at` is on-chain seconds; `install_epoch_millis`
+    // is ms, `0` meaning "no gate" (DB predates this column) — never treated
+    // as epoch zero. A no-op return here (not an error) matches every other
+    // "stale/irrelevant delivery" branch in this dispatch chain.
+    let install_epoch = crate::messages::install_epoch_millis(conn)?;
+    if install_epoch > 0 && received_at * 1000 < install_epoch {
+        return Ok(false);
+    }
+
     let invite = envelope::decode_invite_envelope(envelope_bytes).ok_or(AliasError::MalformedInviteEnvelope)?;
     let invite_ref_hex = envelope::hex_encode(&envelope::invite_ref(&invite.enc_pub, &invite.scan_pub, &invite.pq_pub));
     // Best-effort: the sender is already a known regular-DM contact (that's
@@ -149,20 +162,43 @@ mod tests {
         assert!(matches!(classify(b"short"), IncomingAliasEnvelope::None));
     }
 
+    /// Seconds since the epoch, "now" — `handle_incoming_invite`'s
+    /// `received_at` is on-chain seconds, and the install-epoch gate
+    /// compares it against the fresh test DB's real wall-clock install
+    /// time, so a toy value like `1000` (11.5 days into 1970) would always
+    /// look pre-install and get silently rejected.
+    fn now_secs() -> i64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+    }
+
     #[test]
     fn handle_incoming_invite_records_a_pending_row_idempotently() {
         let db = temp_db("invite");
         let conn = db.connection();
         let created = alias_onboarding::create_invitation_envelope().unwrap();
+        let received_at = now_secs();
 
-        assert!(handle_incoming_invite(conn, "WALLETA", &created.envelope_bytes, 1000).unwrap());
-        assert!(!handle_incoming_invite(conn, "WALLETA", &created.envelope_bytes, 1000).unwrap()); // re-delivered, must not duplicate
+        assert!(handle_incoming_invite(conn, "WALLETA", &created.envelope_bytes, received_at).unwrap());
+        assert!(!handle_incoming_invite(conn, "WALLETA", &created.envelope_bytes, received_at).unwrap()); // re-delivered, must not duplicate
 
         let invite_ref_hex = envelope::hex_encode(&created.invite_ref);
         let rows = incoming_invites::list_incoming_invites(conn, "pending").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].invite_ref, invite_ref_hex);
         assert_eq!(rows[0].peer_wallet, "WALLETA");
+    }
+
+    #[test]
+    fn handle_incoming_invite_ignores_an_envelope_timestamped_before_this_install() {
+        let db = temp_db("stale-invite");
+        let conn = db.connection();
+        let created = alias_onboarding::create_invitation_envelope().unwrap();
+
+        // Fresh `temp_db` just set `install_epoch` to real wall-clock "now"
+        // (ms) — any `received_at` far in the past (here: the Unix epoch
+        // itself) must be silently ignored, not recorded.
+        assert!(!handle_incoming_invite(conn, "WALLETA", &created.envelope_bytes, 0).unwrap());
+        assert!(incoming_invites::list_incoming_invites(conn, "pending").unwrap().is_empty());
     }
 
     #[test]

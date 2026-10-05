@@ -60,17 +60,42 @@ pub fn disable_termination_code(state: State<'_, AppState>) -> Result<(), String
 /// "confirm before changing it" gate in `ChangeTerminationFlow`, reachable
 /// only from within Settings while already unlocked. Wipe-on-entry is
 /// exclusively a lock-screen behavior, handled in `commands::auth::unlock_account`.
+///
+/// **Bug fixed 2026-09-28**: same freeze as [`verify_pin`] below —
+/// `termination::matches` runs the identical 64 MiB Argon2id KDF
+/// synchronously; this was a plain, non-`async` command, so it ran inline
+/// on the window's event-loop thread instead of off to the side.
 #[tauri::command]
-pub fn verify_termination_code(state: State<'_, AppState>, code: String) -> bool {
-    termination::matches(&state.app_dir, &code)
+pub async fn verify_termination_code(state: State<'_, AppState>, code: String) -> Result<bool, ()> {
+    let app_dir = state.app_dir.clone();
+    let ok = tauri::async_runtime::spawn_blocking(move || termination::matches(&app_dir, &code))
+        .await
+        .unwrap_or(false);
+    Ok(ok)
 }
 
 /// Re-verify the PIN without disturbing the active session — used as the
 /// gate step before setting a termination code for the first time, and
 /// before revealing the recovery phrase during log-out.
+///
+/// **Bug fixed 2026-09-28**: this used to be a plain, non-`async` command.
+/// Tauri's codegen calls a non-`async` command's body inline, synchronously,
+/// on whatever thread is handling the IPC dispatch — for the WRY/webkit2gtk
+/// runtime that's the same thread pumping the window's event loop. `Vault::
+/// unlock`'s Argon2id KDF (64 MiB, 3 iterations — deliberately slow, see
+/// `dek/mod.rs`) run there froze the entire window for its duration, live-
+/// reported as the app needing a force-kill. Every sibling vault-touching
+/// command (`unlock_account`, `create_account`, `restore_account`,
+/// `change_pin`) was already `async`; this one was the one inconsistent
+/// straggler. `spawn_blocking` additionally keeps the KDF off the async
+/// runtime's own worker threads, not just off the event-loop thread.
 #[tauri::command]
-pub fn verify_pin(state: State<'_, AppState>, pin: String) -> bool {
-    Vault::unlock(&state.app_dir, &pin).is_ok()
+pub async fn verify_pin(state: State<'_, AppState>, pin: String) -> Result<bool, ()> {
+    let app_dir = state.app_dir.clone();
+    let ok = tauri::async_runtime::spawn_blocking(move || Vault::unlock(&app_dir, &pin).is_ok())
+        .await
+        .unwrap_or(false);
+    Ok(ok)
 }
 
 /// Recovery phrase for backup — requires an already-unlocked session, since
