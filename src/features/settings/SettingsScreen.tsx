@@ -6,10 +6,11 @@ import { useResolvedBio, useResolvedUsername } from "../../queries/contacts";
 import { useClaimUsername, useReleaseUsername } from "../../queries/username";
 import { useSetBio } from "../../queries/bio";
 import { useDeleteAllAliasContacts } from "../../queries/alias";
+import pkg from "../../../package.json";
 
 /** Mirrors `bio::MAX_BYTES` in `src-tauri/src/bio.rs` — keep in sync. */
 const BIO_MAX_BYTES = 160;
-import { useForceResync, useSyncMessages } from "../../queries/messaging";
+import { useForceResync } from "../../queries/messaging";
 import { useDisableTerminationCode, useIsTerminationConfigured, useSetTerminationCode } from "../../queries/settings";
 import { settings as settingsApi } from "../../lib/tauri";
 import { openExternalUrl } from "../../lib/openExternal";
@@ -22,8 +23,8 @@ import {
   IconAt,
   IconBack,
   IconBell,
+  IconChevronRight,
   IconInfo,
-  IconKey,
   IconLock,
   IconPencil,
   IconPlus,
@@ -48,8 +49,8 @@ type View =
   | "termination_verify"
   | "termination_setCode"
   | "termination_confirmCode"
-  | "seed_verify"
-  | "seed_view"
+  | "logout"
+  | "logout_verifyPin"
   | "deleteAliasChats_verify";
 
 /**
@@ -120,7 +121,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const setTerminationCode = useSetTerminationCode();
   const disableTerminationCode = useDisableTerminationCode();
   const forceResync = useForceResync();
-  const syncNow = useSyncMessages();
 
   const [view, setView] = useState<View>("main");
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +141,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const [bioInput, setBioInput] = useState("");
   const [showBioDiscardConfirm, setShowBioDiscardConfirm] = useState(false);
   const [showCreditsInfo, setShowCreditsInfo] = useState(false);
-  const [confirmingLogout, setConfirmingLogout] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
   async function handleCopyAddress() {
@@ -158,6 +157,9 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     setNewPin(null);
     setTerminationTargetAction(null);
     setPendingTerminationCode(null);
+    // Require a fresh PIN re-verify next time Logout is opened, same as a
+    // brand-new `LogoutScreen` instance on mobile always starting collapsed.
+    setSeedWords(null);
   }
 
   // --- change PIN ---
@@ -263,9 +265,11 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     }
   }
 
-  // --- seed phrase backup ---
+  // --- logout (recovery phrase reveal is a step inside this flow, not a
+  // standalone settings item — mirrors `logout_screen.dart`'s collapsed
+  // row → PIN re-auth → revealed card shape exactly) ---
 
-  async function handleSeedVerifyPin(pin: string) {
+  async function handleLogoutVerifyPin(pin: string) {
     setBusy(true);
     setError(null);
     try {
@@ -277,12 +281,18 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
       }
       const phrase = await settingsApi.getSeedPhraseForBackup();
       setSeedWords(phrase.trim().split(/\s+/));
-      setView("seed_view");
+      setView("logout");
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function copySeedPhrase() {
+    if (!seedWords) return;
+    await navigator.clipboard.writeText(seedWords.join(" "));
+    setNotice("Recovery phrase copied");
   }
 
   // --- delete all alias chats ---
@@ -370,17 +380,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function handleSyncNow() {
-    setError(null);
-    setNotice(null);
-    try {
-      const newCount = await syncNow.mutateAsync(false);
-      setNotice(newCount > 0 ? `Synced — ${newCount} new message(s).` : "Synced — nothing new.");
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
   async function handleLogOut() {
     setBusy(true);
     try {
@@ -444,15 +443,15 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
       />
     );
   }
-  if (view === "seed_verify") {
+  if (view === "logout_verifyPin") {
     return (
       <PinPad
-        headline="Enter your PIN to view your recovery phrase"
+        headline="Confirm your PIN to reveal your recovery phrase"
         errorText={error}
         loading={busy}
         resetToken={resetToken}
-        onBack={backToMain}
-        onComplete={handleSeedVerifyPin}
+        onBack={() => setView("logout")}
+        onComplete={handleLogoutVerifyPin}
       />
     );
   }
@@ -469,27 +468,43 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
       />
     );
   }
-  if (view === "seed_view" && seedWords) {
+  if (view === "logout") {
     return (
       <div className="settings-screen">
         <div className="settings-screen__header">
           <button className="settings-back-btn" onClick={backToMain} aria-label="Back">
             <IconBack />
           </button>
-          <h2 className="settings-screen__title">Recovery phrase</h2>
+          <h2 className="settings-screen__title">Logout</h2>
         </div>
         <div className="settings-screen__body">
-          <p className="settings-screen__hint">Anyone with these words can access your wallet. Keep them offline and private.</p>
-          <div className="mnemonic-grid">
-            {seedWords.map((word, i) => (
-              <div className="mnemonic-grid__word" key={i}>
-                <span className="mnemonic-grid__index">{i + 1}.</span>
-                <span>{word}</span>
+          {notice && <p className="settings-screen__notice">{notice}</p>}
+          <p className="settings-screen__hint">
+            Logging out wipes local data on this device — alias chat history and conversation history will be lost. Back up your
+            recovery phrase first.
+          </p>
+          {seedWords ? (
+            <div className="logout-phrase-card">
+              <span className="logout-phrase-card__label">Recovery Phrase</span>
+              <span className="logout-phrase-card__hint">copy the code to recover data</span>
+              <div className="logout-phrase-card__box">
+                <span className="logout-phrase-card__text">{seedWords.join(" ")}</span>
+                <button className="logout-phrase-card__copy" onClick={copySeedPhrase} aria-label="Copy recovery phrase">
+                  <IconCopy />
+                </button>
               </div>
-            ))}
-          </div>
-          <button className="btn btn--primary" onClick={backToMain}>
-            Done
+            </div>
+          ) : (
+            <button className="logout-phrase-row" onClick={() => setView("logout_verifyPin")}>
+              <span className="logout-phrase-row__text">
+                <span className="logout-phrase-row__label">Show recovery code</span>
+                <span className="logout-phrase-row__hint">copy the code to recover data</span>
+              </span>
+              <IconChevronRight />
+            </button>
+          )}
+          <button className="logout-anyway-btn" disabled={busy} onClick={handleLogOut}>
+            {busy ? "Logging out…" : "Logout anyway"}
           </button>
         </div>
       </div>
@@ -808,14 +823,6 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             sublabel="Keep running in the background instead of quitting"
             right={<ToggleIndicator on={minimizeToTrayEnabled} onClick={() => setMinimizeToTrayEnabled(!minimizeToTrayEnabled)} />}
           />
-          <SettingsListRow
-            icon={<IconRefresh />}
-            label="Sync now"
-            sublabel="Quick check for anything new since the last sync"
-            right={<span className="settings-list-row__status">{syncNow.isPending ? "Syncing…" : ""}</span>}
-            onClick={handleSyncNow}
-          />
-          <SettingsListRow icon={<IconKey />} label="View recovery phrase" onClick={() => setView("seed_verify")} />
         </SettingsSection>
 
         <section className="settings-section settings-section--danger">
@@ -826,20 +833,13 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             danger
             onClick={() => setView("deleteAliasChats_verify")}
           />
-          {!confirmingLogout ? (
-            <SettingsListRow icon={<IconPower />} label="Log out & delete your data" danger onClick={() => setConfirmingLogout(true)} />
-          ) : (
-            <div className="settings-row--form">
-              <p className="settings-screen__hint">This wipes this device's local data. Make sure you've backed up your recovery phrase.</p>
-              <button className="btn btn--danger settings-btn-full" disabled={busy} onClick={handleLogOut}>
-                {busy ? "Logging out…" : "Confirm log out"}
-              </button>
-              <button className="btn btn--text settings-btn-full" onClick={() => setConfirmingLogout(false)}>
-                Cancel
-              </button>
-            </div>
-          )}
+          <SettingsListRow icon={<IconPower />} label="Log out & delete your data" danger onClick={() => setView("logout")} />
         </section>
+
+        <div className="settings-version-footer">
+          <span className="settings-version-footer__brand">Sealed Desktop</span>
+          <span className="settings-version-footer__version">Version {pkg.version}</span>
+        </div>
       </div>
     </div>
   );

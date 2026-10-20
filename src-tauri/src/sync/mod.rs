@@ -104,6 +104,80 @@ async fn tick(app_handle: &AppHandle) {
         Ok(_) => {}
         Err(e) => eprintln!("[sync] background tick failed: {e}"),
     }
+
+    // Recomputed every tick (not just on `new_count > 0`): the badge must
+    // also drop promptly when the user reads messages, which happens via
+    // a completely separate command (`mark_conversation_as_read`) this
+    // loop never sees directly. At a 3s poll interval, driving it off the
+    // regular tick keeps it accurate without a second notification path.
+    // Fresh `state` lookup — the earlier binding was moved into
+    // `sync_messages` above (`tauri::State` isn't `Copy`).
+    let state = app_handle.state::<AppState>();
+    let session_guard = state.session.lock().await;
+    if let Some(session) = session_guard.as_ref() {
+        update_unread_badge(app_handle, session.db.connection());
+    }
+}
+
+/// Sums unread counts across regular + alias conversations and pushes the
+/// result to the platform's taskbar/Dock icon. Best-effort — any failure
+/// here must never affect the sync tick itself.
+///
+/// macOS/Linux get a real number via `set_badge_count`. Windows has no
+/// numeric badge API at all (Tauri's own doc comment on it says
+/// "Unsupported, use `set_overlay_icon` instead") — `set_overlay_icon`
+/// only takes an image, not a count, so Windows gets a plain red dot
+/// (generated in-memory, no asset file) rather than the real number.
+fn update_unread_badge(app_handle: &AppHandle, conn: &rusqlite::Connection) {
+    let regular: i64 = crate::messages::get_conversations(conn).map(|rows| rows.iter().map(|c| c.unread_count).sum()).unwrap_or(0);
+    let alias: i64 =
+        crate::alias::messages::get_alias_conversations(conn).map(|rows| rows.iter().map(|c| c.unread_count).sum()).unwrap_or(0);
+    let total = regular + alias;
+
+    let Some(window) = app_handle.get_webview_window("main") else { return };
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window.set_badge_count(if total > 0 { Some(total) } else { None });
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = window.set_overlay_icon(if total > 0 { Some(unread_dot_image()) } else { None });
+    }
+}
+
+/// A plain red dot with a white ring (for contrast against dark taskbar
+/// icons), rendered directly as an RGBA buffer — no bundled asset file.
+/// Computed once and cached: the image itself never changes, only whether
+/// it's currently applied.
+#[cfg(target_os = "windows")]
+fn unread_dot_image() -> tauri::image::Image<'static> {
+    use std::sync::OnceLock;
+    static IMAGE: OnceLock<tauri::image::Image<'static>> = OnceLock::new();
+    IMAGE
+        .get_or_init(|| {
+            const SIZE: u32 = 32;
+            const CENTER: f32 = SIZE as f32 / 2.0;
+            const RADIUS: f32 = 13.0;
+            const BORDER: f32 = 2.0;
+            let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
+            for y in 0..SIZE {
+                for x in 0..SIZE {
+                    let dx = x as f32 + 0.5 - CENTER;
+                    let dy = y as f32 + 0.5 - CENTER;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    let idx = ((y * SIZE + x) * 4) as usize;
+                    if dist <= RADIUS {
+                        rgba[idx..idx + 4].copy_from_slice(&[0xD3, 0x17, 0x37, 0xFF]); // brand destructive red
+                    } else if dist <= RADIUS + BORDER {
+                        rgba[idx..idx + 4].copy_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]);
+                    }
+                    // else: stays fully transparent (buffer is zero-initialized)
+                }
+            }
+            tauri::image::Image::new_owned(rgba, SIZE, SIZE)
+        })
+        .clone()
 }
 
 /// On Windows, bypasses `tauri-plugin-notification` and builds the toast
