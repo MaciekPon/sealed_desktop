@@ -129,20 +129,39 @@ async fn tick(app_handle: &AppHandle) {
 /// only takes an image, not a count, so Windows gets a plain red dot
 /// (generated in-memory, no asset file) rather than the real number.
 fn update_unread_badge(app_handle: &AppHandle, conn: &rusqlite::Connection) {
-    let regular: i64 = crate::messages::get_conversations(conn).map(|rows| rows.iter().map(|c| c.unread_count).sum()).unwrap_or(0);
-    let alias: i64 =
-        crate::alias::messages::get_alias_conversations(conn).map(|rows| rows.iter().map(|c| c.unread_count).sum()).unwrap_or(0);
+    let regular: i64 = match crate::messages::get_conversations(conn) {
+        Ok(rows) => rows.iter().map(|c| c.unread_count).sum(),
+        Err(e) => {
+            eprintln!("[sync] update_unread_badge: get_conversations failed: {e}");
+            0
+        }
+    };
+    let alias: i64 = match crate::alias::messages::get_alias_conversations(conn) {
+        Ok(rows) => rows.iter().map(|c| c.unread_count).sum(),
+        Err(e) => {
+            eprintln!("[sync] update_unread_badge: get_alias_conversations failed: {e}");
+            0
+        }
+    };
     let total = regular + alias;
+    eprintln!("[sync] update_unread_badge: regular={regular} alias={alias} total={total}");
 
-    let Some(window) = app_handle.get_webview_window("main") else { return };
+    let Some(window) = app_handle.get_webview_window("main") else {
+        eprintln!("[sync] update_unread_badge: no window labeled \"main\"");
+        return;
+    };
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = window.set_badge_count(if total > 0 { Some(total) } else { None });
+        if let Err(e) = window.set_badge_count(if total > 0 { Some(total) } else { None }) {
+            eprintln!("[sync] set_badge_count({total}) failed: {e}");
+        }
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = window.set_overlay_icon(if total > 0 { Some(unread_dot_image()) } else { None });
+        if let Err(e) = window.set_overlay_icon(if total > 0 { Some(unread_dot_image()) } else { None }) {
+            eprintln!("[sync] set_overlay_icon failed: {e}");
+        }
     }
 }
 
